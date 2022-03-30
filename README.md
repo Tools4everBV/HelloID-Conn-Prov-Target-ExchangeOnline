@@ -26,7 +26,7 @@
 
 ## Requirements
 - Installed and available [Microsoft Exchange Online PowerShell V2 module](https://docs.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
-- Concurrent sessions in HelloID set to a maximum of 1! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
+- **Concurrent sessions** in HelloID set to a **maximum of 1**! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
 
 ## Introduction
 For this connector we have the option to correlate to existing Exchange Online (Office 365) users and provision groupmemberships and/or permission(s) to a shared mailbox.
