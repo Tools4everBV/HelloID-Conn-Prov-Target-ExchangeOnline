@@ -1,0 +1,25 @@
+[
+  {
+    "key": "Username",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Username",
+      "placeholder": "admin@enyoi.onmicrosoft.com",
+      "description": "The username of a Global Admin in Exchange Online (Office 365)",
+      "required": true
+    }
+  },
+  {
+    "key": "Password",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Password",
+      "type": "password",
+      "placeholder": "P@ssw0rd1!",
+      "description": "The password of the Global Admin in Exchange Online (Office 365)",
+      "required": true
+    }
+  }
+]
