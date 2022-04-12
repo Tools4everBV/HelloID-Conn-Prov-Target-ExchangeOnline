@@ -189,14 +189,14 @@ try {
                 $warningLogs = [System.Collections.ArrayList]::new()
                 $errorLogs = [System.Collections.ArrayList]::new()
 
-                [Void]$verboseLogs.Add("revoking permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                [Void]$verboseLogs.Add("revoking permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))")
                 $removeDGMember = Remove-DistributionGroupMember -Identity $pRef.id -Member $aRef.Guid -BypassSecurityGroupManagerCheck:$true -Confirm:$false -ErrorAction Stop
-                [Void]$informationLogs.Add("Successfully revoked Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                [Void]$informationLogs.Add("Successfully revoked Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
                 $success = $true
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "RevokePermission"
-                        Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                        Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))"
                         IsError = $false
                     }
                 )      
@@ -206,7 +206,7 @@ try {
                     $success = $true
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "RevokePermission"
-                            Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                            Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))"
                             IsError = $false
                         }
                     )
@@ -215,7 +215,7 @@ try {
                     $success = $true
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "RevokePermission"
-                            Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                            Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))"
                             IsError = $false
                         }
                     )
@@ -224,17 +224,17 @@ try {
                     $success = $true
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "RevokePermission"
-                            Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                            Message = "Successfully revoked Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))"
                             IsError = $false
                         }
                     )
                 }else{
                     # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
-                    [Void]$warningLogs.Add("Error revoking Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                    [Void]$warningLogs.Add("Error revoking Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
                     $success = $false
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "RevokePermission"
-                            Message = "Failed to revoke Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                            Message = "Failed to revoke Permission $($pRef.Name) ($($pRef.id)) from $($aRef.UserPrincipalName) ($($aRef.Guid))"
                             IsError = $true
                         }
                     )
