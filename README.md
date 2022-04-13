@@ -26,6 +26,7 @@
 
 ## Requirements
 - Installed and available [Microsoft Exchange Online PowerShell V2 module](https://docs.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
+- Required to run **On-Premises** since it is not allowed to import a module with the Cloud Agent.
 - **Concurrent sessions** in HelloID set to a **maximum of 1**! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
 
 ## Introduction
