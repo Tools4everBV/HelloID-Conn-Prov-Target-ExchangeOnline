@@ -22,6 +22,8 @@ $WarningPreference = "Continue"
 $Username = $c.Username
 $Password = $c.Password
 
+$autoMapping = $true
+
 # Troubleshooting
 # $aRef = @{
 #     Guid = "ae71715a-2964-4ce6-844a-b684d61aa1e5"
@@ -195,7 +197,7 @@ try {
                         "Full Access" {
                             [Void][Void]$verboseLogs.Add("Granting permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
                             # No error is thrown when user already has permission
-                            $addFAPermission = Add-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -AutoMapping:$AutoMapping -User $aRef.Guid -ErrorAction Stop
+                            $addFAPermission = Add-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -AutoMapping:$autoMapping -User $aRef.Guid -ErrorAction Stop
                             [Void]$informationLogs.Add("Successfully granted permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
                         }
                         "Send As" {
