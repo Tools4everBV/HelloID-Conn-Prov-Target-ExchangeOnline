@@ -1,12 +1,12 @@
 #region Initialize default properties
 $c = $configuration | ConvertFrom-Json
-$p = $person | ConvertFrom-Json;
-$m = $manager | ConvertFrom-Json;
-$aRef = $accountReference | ConvertFrom-Json;
-$mRef = $managerAccountReference | ConvertFrom-Json;
+$p = $person | ConvertFrom-Json
+$m = $manager | ConvertFrom-Json
+$aRef = $accountReference | ConvertFrom-Json
+$mRef = $managerAccountReference | ConvertFrom-Json
 
 # The permissionReference object contains the Identification object provided in the retrieve permissions call
-$pRef = $permissionReference | ConvertFrom-Json;
+$pRef = $permissionReference | ConvertFrom-Json
 
 $success = $True
 $auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
@@ -102,6 +102,7 @@ try {
                 
             # Import module
             $moduleName = "ExchangeOnlineManagement"
+            $commands = @("Get-User", "Add-MailboxPermission", "Add-RecipientPermission", "Set-Mailbox")
 
             # If module is imported say that and do nothing
             if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
@@ -110,7 +111,7 @@ try {
             else {
                 # If module is not imported, but available on disk then import
                 if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                    $module = Import-Module $ModuleName
+                    $module = Import-Module $ModuleName -Cmdlet $commands
                     [Void]$verboseLogs.Add("Imported module $ModuleName")
                 }
                 else {
@@ -282,9 +283,9 @@ catch {
             Action  = "GrantPermission"
             Message = "Failed to grant permission:  $_"
             IsError = $True
-        });
+        })
     $success = $false
-    Write-Warning $_;
+    Write-Warning $_
 } finally {
     Start-Sleep 1
     if ($null -ne $remoteSession) {           
@@ -299,6 +300,6 @@ $result = [PSCustomObject]@{
     Success   = $success
     AuditLogs = $auditLogs
     # Account   = [PSCustomObject]@{ }
-};
+}
 
-Write-Output $result | ConvertTo-Json -Depth 10;
+Write-Output $result | ConvertTo-Json -Depth 10

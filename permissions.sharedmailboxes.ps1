@@ -83,6 +83,7 @@ try {
             
         # Import module
         $moduleName = "ExchangeOnlineManagement"
+        $commands = @("Get-User", "Get-EXOMailbox")
 
         # If module is imported say that and do nothing
         if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
@@ -91,7 +92,7 @@ try {
         else {
             # If module is not imported, but available on disk then import
             if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                $module = Import-Module $ModuleName
+                $module = Import-Module $ModuleName -Cmdlet $commands
                 [Void]$verboseLogs.Add("Imported module $ModuleName")
             }
             else {
@@ -208,12 +209,12 @@ catch {
 $mailboxes = $getExoMailboxes.mailboxes
 foreach($mailbox in $mailboxes){
     $permission = @{
-        DisplayName = "Shared Mailbox - $($mailbox.DisplayName)";
+        DisplayName = "Shared Mailbox - $($mailbox.DisplayName)"
         Identification = @{
-            Id = $mailbox.Guid;
-            Name = $mailbox.DisplayName;
-            Permissions = @("Full Access","Send As"); # Options:  Full Access,Send As, Send on Behalf
+            Id = $mailbox.Guid
+            Name = $mailbox.DisplayName
+            Permissions = @("Full Access","Send As") # Options:  Full Access,Send As, Send on Behalf
         }
     }
-    Write-output $permission | ConvertTo-Json -Depth 10;    
+    Write-output $permission | ConvertTo-Json -Depth 10    
 }

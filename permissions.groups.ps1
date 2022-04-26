@@ -83,6 +83,7 @@ try {
             
         # Import module
         $moduleName = "ExchangeOnlineManagement"
+        $commands = @("Get-User", "Get-DistributionGroup")
 
         # If module is imported say that and do nothing
         if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
@@ -91,7 +92,7 @@ try {
         else {
             # If module is not imported, but available on disk then import
             if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                $module = Import-Module $ModuleName
+                $module = Import-Module $ModuleName -Cmdlet $commands
                 [Void]$verboseLogs.Add("Imported module $ModuleName")
             }
             else {
@@ -219,12 +220,12 @@ foreach($group in $groups){
     }
     
     $permission = @{
-        DisplayName = "$($groupType) - $($group.DisplayName)";
+        DisplayName = "$($groupType) - $($group.DisplayName)"
         Identification = @{
-            Id = $group.Guid;
-            Name = $group.DisplayName;
+            Id = $group.Guid
+            Name = $group.DisplayName
         }
     }
 
-    Write-output $permission | ConvertTo-Json -Depth 10;    
+    Write-output $permission | ConvertTo-Json -Depth 10    
 }
