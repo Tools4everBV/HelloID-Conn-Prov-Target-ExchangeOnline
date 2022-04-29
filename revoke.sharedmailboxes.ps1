@@ -119,6 +119,7 @@ try {
                     throw "Module $ModuleName not imported, not available. Please install the module using: Install-Module -Name $ModuleName -Force"
                 }
             }
+
             # Check if Exchange Connection already exists
             try{
                 $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
@@ -190,66 +191,94 @@ try {
                 $errorLogs = [System.Collections.ArrayList]::new()
 
                 foreach($permission in $pRef.Permissions){
-                    switch($permission){
-                        "Full Access" {
-                            [Void][Void]$verboseLogs.Add("Revoking permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                            # No error is thrown when user already has permission
-                            $removeFAPermission = Remove-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -User $aRef.Guid -Confirm:$false -ErrorAction Stop
-                            [Void]$informationLogs.Add("Successfully revoked permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                    try{
+                        switch($permission){
+                            "Full Access" {
+                                [Void][Void]$verboseLogs.Add("Revoking permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                $removeFAPermission = Remove-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -User $aRef.Guid -Confirm:$false -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully revoked permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "RevokePermission"
+                                        Message = "Successfully revoked permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                            "Send As" {
+                                [Void]$verboseLogs.Add("Revoking permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                $removeSAPermission = Remove-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully revoked permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "RevokePermission"
+                                        Message = "Successfully revoked permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                            "Send on Behalf" {
+                                [Void]$verboseLogs.Add("Revoking permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                # Can only be assigned to mailbox (so just  a user account isn't sufficient, there has to be a mailbox for the user)
+                                $removeSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{remove="$($aRef.Guid)"} -Confirm:$false -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully revoked permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "RevokePermission"
+                                        Message = "Successfully revoked permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
                         }
-                        "Send As" {
-                            [Void]$verboseLogs.Add("Revoking permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                            # No error is thrown when user already has permission
-                            $removeSAPermission = Remove-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
-                            [Void]$informationLogs.Add("Successfully revoked permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                        }
-                        "Send on Behalf" {
-                            [Void]$verboseLogs.Add("Revoking permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                            # No error is thrown when user already has permission
-                            # Can only be assigned to mailbox (so just  a user account isn't sufficient, there has to be a mailbox for the user)
-                            $removeSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{remove="$($aRef.Guid)"} -Confirm:$false -ErrorAction Stop
-                            [Void]$informationLogs.Add("Successfully revoked permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                    } catch {
+                        if($_ -like "*object '$($pRef.id)' couldn't be found*"){
+                            [Void]$warningLogs.Add("Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
+                            $success = $true
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "RevokePermission"
+                                    Message = "Successfully revoked ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $false
+                                }
+                            )
+                        }elseif($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*"){
+                            [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
+                            $success = $true
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "RevokePermission"
+                                    Message = "Successfully revoked ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $false
+                                }
+                            )
+                        }else{
+                            # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
+                            [Void]$warningLogs.Add("Error Revoking permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                            $success = $false
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "RevokePermission"
+                                    Message = "Failed to revoke permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $true
+                                }
+                            )
                         }
                     }
                 }
-
-                $success = $true
+            } catch {
+                # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
+                [Void]$warningLogs.Add("Error Revoking permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                $success = $false
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "RevokePermission"
-                        Message = "Successfully revoked permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                        IsError = $false
+                        Message = "Failed to revoke permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                        IsError = $true
                     }
-                )      
-            } catch {
-                if($_ -like "*object '$($pRef.id)' couldn't be found*"){
-                    [Void]$warningLogs.Add("Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Successfully revoked ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }elseif($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*"){
-                    [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Successfully revoked ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }else{
-                    # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
-                    [Void]$warningLogs.Add("Error Revoking permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
-                    $success = $false
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Failed to revoke permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $true
-                        }
-                    )
-                }
+                )
             } finally {
                 $returnobject = @{
                     success         = $success
@@ -260,7 +289,7 @@ try {
                     errorLogs       = $errorLogs
                 }
                 Remove-Variable ("aRef","pRef","success","auditLogs","verboseLogs","informationLogs","warningLogs","errorLogs")     
-                Write-Output $returnobject 
+                Write-Output $returnobject
             }
         }
     }

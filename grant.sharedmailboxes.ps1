@@ -104,6 +104,7 @@ try {
                 
             # Import module
             $moduleName = "ExchangeOnlineManagement"
+            $commands = @("Get-User", "Add-MailboxPermission", "Add-RecipientPermission", "Set-Mailbox")
 
             # If module is imported say that and do nothing
             if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
@@ -112,7 +113,7 @@ try {
             else {
                 # If module is not imported, but available on disk then import
                 if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                    $module = Import-Module $ModuleName
+                    $module = Import-Module $ModuleName -Cmdlet $commands
                     [Void]$verboseLogs.Add("Imported module $ModuleName")
                 }
                 else {
