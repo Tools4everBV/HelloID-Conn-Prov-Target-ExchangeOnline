@@ -104,7 +104,6 @@ try {
                 
             # Import module
             $moduleName = "ExchangeOnlineManagement"
-            $commands = @("Get-User", "Add-MailboxPermission", "Add-RecipientPermission", "Set-Mailbox")
 
             # If module is imported say that and do nothing
             if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
@@ -113,7 +112,7 @@ try {
             else {
                 # If module is not imported, but available on disk then import
                 if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                    $module = Import-Module $ModuleName -Cmdlet $commands
+                    $module = Import-Module $ModuleName
                     [Void]$verboseLogs.Add("Imported module $ModuleName")
                 }
                 else {
@@ -193,66 +192,94 @@ try {
                 $errorLogs = [System.Collections.ArrayList]::new()
 
                 foreach($permission in $pRef.Permissions){
-                    switch($permission){
-                        "Full Access" {
-                            [Void][Void]$verboseLogs.Add("Granting permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                            # No error is thrown when user already has permission
-                            $addFAPermission = Add-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -AutoMapping:$autoMapping -User $aRef.Guid -ErrorAction Stop
-                            [Void]$informationLogs.Add("Successfully granted permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                    try{
+                        switch($permission){
+                            "Full Access" {
+                                [Void][Void]$verboseLogs.Add("Granting permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                $addFAPermission = Add-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -AutoMapping:$AutoMapping -User $aRef.Guid -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully granted permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "GrantPermission"
+                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                            "Send As" {
+                                [Void]$verboseLogs.Add("Granting permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                $addSAPermission = Add-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully granted permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "GrantPermission"
+                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                            "Send on Behalf" {
+                                [Void]$verboseLogs.Add("Granting permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                # Can only be assigned to mailbox (so just  a user account isn't sufficient, there has to be a mailbox for the user)
+                                $addSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{add="$($aRef.Guid)"} -Confirm:$false -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully granted permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "GrantPermission"
+                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
                         }
-                        "Send As" {
-                            [Void]$verboseLogs.Add("Granting permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                            # No error is thrown when user already has permission
-                            $addSAPermission = Add-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
-                            [Void]$informationLogs.Add("Successfully granted permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                        }
-                        "Send on Behalf" {
-                            [Void]$verboseLogs.Add("Granting permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                            # No error is thrown when user already has permission
-                            # Can only be assigned to mailbox (so just  a user account isn't sufficient, there has to be a mailbox for the user)
-                            $addSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{add="$($aRef.Guid)"} -Confirm:$false -ErrorAction Stop
-                            [Void]$informationLogs.Add("Successfully granted permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                    } catch {
+                        if($_ -like "*object '$($pRef.id)' couldn't be found*"){
+                            [Void]$warningLogs.Add("Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
+                            $success = $true
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "GrantPermission"
+                                    Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $false
+                                }
+                            )
+                        }elseif($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*"){
+                            [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
+                            $success = $true
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "GrantPermission"
+                                    Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $false
+                                }
+                            )
+                        }else{
+                            # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
+                            [Void]$warningLogs.Add("Error Granting permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                            $success = $false
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "GrantPermission"
+                                    Message = "Failed to grant permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $true
+                                }
+                            )
                         }
                     }
                 }
-
-                $success = $true
+            } catch {
+                # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
+                [Void]$warningLogs.Add("Error Granting permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                $success = $false
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "GrantPermission"
-                        Message = "Successfully granted permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                        IsError = $false
+                        Message = "Failed to grant permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                        IsError = $true
                     }
-                )      
-            } catch {
-                if($_ -like "*object '$($pRef.id)' couldn't be found*"){
-                    [Void]$warningLogs.Add("Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Successfully granted ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }elseif($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*"){
-                    [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Successfully granted ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }else{
-                    # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
-                    [Void]$warningLogs.Add("Error Granting permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
-                    $success = $false
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Failed to grant permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $true
-                        }
-                    )
-                }
+                )
             } finally {
                 $returnobject = @{
                     success         = $success
