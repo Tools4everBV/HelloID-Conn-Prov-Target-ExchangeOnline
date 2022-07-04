@@ -100,7 +100,18 @@ try {
                 
             # Import module
             $moduleName = "ExchangeOnlineManagement"
-            $commands = @("Get-User")
+            $commands = @(
+                "Get-User",
+                "Get-DistributionGroup",
+                "Add-DistributionGroupMember",
+                "Remove-DistributionGroupMember",
+                "Get-EXOMailbox",
+                "Add-MailboxPermission",
+                "Add-RecipientPermission",
+                "Set-Mailbox",
+                "Remove-MailboxPermission",
+                "Remove-RecipientPermission"
+            )
 
             # If module is imported say that and do nothing
             if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
@@ -137,8 +148,16 @@ try {
                     # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
                     $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
                     $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
-                    $exchangeSession = Connect-ExchangeOnline -Credential $credential -ShowBanner:$false -ShowProgress:$false -PSSessionOption $remotePSSessionOption -ErrorAction Stop
-    
+                    $exchangeSessionParams = @{
+                        Credential = $credential
+                        PSSessionOption = $remotePSSessionOption
+                        CommandName = $commands
+                        ShowBanner = $false
+                        ShowProgress = $false
+                        ErrorAction = 'Stop'
+                    }
+                    $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
+
                     [Void]$informationLogs.Add("Successfully connected to Exchange Online")
                 }
                 else {
@@ -204,7 +223,7 @@ try {
                     UserPrincipalName = $user.UserPrincipalName
                 }
 
-                [Void]$informationLogs.Add("Account correlated to $($aRef.userPrincipalName) ($($aRef.Guid))")
+                [Void]$verboseLogs.Add("Account correlated to $($aRef.userPrincipalName) ($($aRef.Guid))")
 
                 $success = $true
                 $auditLogs.Add([PSCustomObject]@{

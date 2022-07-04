@@ -10,16 +10,16 @@
 ## Versioning
 | Version | Description | Date |
 | - | - | - |
+| 1.0.1   | Updated to only import the modules we use for performance increase | 2022/07/04  |
 | 1.0.0   | Initial release | 2022/03/30  |
 
 <!-- TABLE OF CONTENTS -->
 ## Table of Contents
+- [Versioning](#versioning)
 - [Table of Contents](#table-of-contents)
+- [Requirements](#requirements)
 - [Introduction](#introduction)
-- [Getting the Azure AD graph API access](#getting-the-azure-ad-graph-api-access)
-  - [Application Registration](#application-registration)
-  - [Configuring App Permissions](#configuring-app-permissions)
-  - [Authentication and Authorization](#authentication-and-authorization)
+- [Installing the Microsoft Exchange Online PowerShell V2 module](#installing-the-microsoft-exchange-online-powershell-v2-module)
   - [Connection settings](#connection-settings)
 - [Getting help](#getting-help)
 - [HelloID Docs](#helloid-docs)
