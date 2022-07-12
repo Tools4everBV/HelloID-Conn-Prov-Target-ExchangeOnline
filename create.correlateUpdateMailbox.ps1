@@ -111,7 +111,6 @@ try {
                 
             # Import module
             $moduleName = "ExchangeOnlineManagement"
-            $commands = @("Get-User")
 
             $commands = @(
                 "Get-User",
@@ -197,7 +196,6 @@ try {
                     warningLogs     = $warningLogs
                     errorLogs       = $errorLogs
                 }
-                [Void]$verboseLogs.Add("here? 1")
                 Remove-Variable ("verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
                 Write-Output $returnobject 
             }
