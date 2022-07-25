@@ -18,11 +18,11 @@ $VerbosePreference = "SilentlyContinue"
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Username = $c.Username
-$Password = $c.Password
-
-$autoMapping = $true
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # Troubleshooting
 # $aRef = @{
@@ -68,7 +68,8 @@ function Set-PSSession {
             $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
         }        
         Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-    } catch {
+    }
+    catch {
         Write-Verbose "Remote Powershell session not found: $($_)"
     }
 
@@ -77,7 +78,8 @@ function Set-PSSession {
             $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
             $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionName -SessionOption $remotePSSessionOption
             Write-Verbose "Remote Powershell session is created, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-        } catch {
+        }
+        catch {
             throw "Couldn't created a PowerShell Session: $($_.Exception.Message)"
         }
     }
@@ -90,7 +92,7 @@ function Set-PSSession {
 #endregion functions
 
 try {
-    if($dryRun -eq $false){
+    if ($dryRun -eq $false) {
         $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
         Connect-PSSession $remoteSession | out-null                                                                            
 
@@ -134,71 +136,76 @@ try {
             }
 
             # Check if Exchange Connection already exists
-            try{
+            try {
                 $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
                 $connectedToExchange = $true
-            }catch{
-                if($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*"){
+            }
+            catch {
+                if ($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*") {
                     $connectedToExchange = $false
                 }
             }
             
             # Connect to Exchange
-            try{
-                if($connectedToExchange -eq $false){
+            try {
+                if ($connectedToExchange -eq $false) {
                     [Void]$verboseLogs.Add("Connecting to Exchange Online..")
     
-                    # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                    $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                    $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                    # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                     $exchangeSessionParams = @{
-                        Credential = $credential
-                        PSSessionOption = $remotePSSessionOption
-                        CommandName = $commands
-                        ShowBanner = $false
-                        ShowProgress = $false
-                        ErrorAction = 'Stop'
+                        Organization          = $using:AADOrganization
+                        AppID                 = $using:AADAppID
+                        CertificateThumbPrint = $using:AADCertificateThumbprint
+                        CommandName           = $commands
+                        ShowBanner            = $false
+                        ShowProgress          = $false
+                        TrackPerformance      = $false
+                        ErrorAction           = 'Stop'
                     }
                     $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
-                    
+
                     [Void]$informationLogs.Add("Successfully connected to Exchange Online")
-                }else{
+                }
+                else {
                     [Void]$verboseLogs.Add("Already connected to Exchange Online")
                 }
             }
             catch {
                 if (-Not [string]::IsNullOrEmpty($_.Exception.InnerExceptions)) {
                     $errorMessage = "$($_.Exception.InnerExceptions)"
-                }else{
+                }
+                else {
                     $errorMessage = "$($_.Exception.Message) $($_.ScriptStackTrace)"
                 }
                 [Void]$warningLogs.Add($errorMessage)
-                throw "Could not connect to Exchange Online, error: $_"
-            } finally {
+                [Void]$errorLogs.Add("Could not connect to Exchange Online, error: $_")
+            }
+            finally {
                 $returnobject = @{
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
                     warningLogs     = $warningLogs
                     errorLogs       = $errorLogs
                 }
-                Remove-Variable ("verboseLogs","informationLogs","warningLogs","errorLogs")     
+                Remove-Variable ("verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
                 Write-Output $returnobject 
             }
         }
 
         # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
         $verboseLogs = $createSessionResult.verboseLogs
-        foreach($verboseLog in $verboseLogs){ Write-Verbose $verboseLog }
+        foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
         $informationLogs = $createSessionResult.informationLogs
-        foreach($informationLog in $informationLogs){ Write-Information $informationLog }
+        foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
         $warningLogs = $createSessionResult.warningLogs
-        foreach($warningLog in $warningLogs){ Write-Warning $warningLog }
+        foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
         $errorLogs = $createSessionResult.errorLogs
-        foreach($errorLog in $errorLogs){ Write-Warning $errorLog }
+        foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+        if ($errorLogs.Count -ge 1) { throw }
 
-        # Grant Exchange Online Mailbox permission
-        $addExoMailboxPermission = Invoke-Command -Session $remoteSession -ScriptBlock {
-            try{
+        # Revoke Exchange Online Mailbox permission
+        $removeExoMailboxPermission = Invoke-Command -Session $remoteSession -ScriptBlock {
+            try {
                 $aRef = $using:aRef
                 $pRef = $using:pRef
 
@@ -211,96 +218,101 @@ try {
                 $warningLogs = [System.Collections.ArrayList]::new()
                 $errorLogs = [System.Collections.ArrayList]::new()
 
-                foreach($permission in $pRef.Permissions){
-                    try{
-                        switch($permission){
+                foreach ($permission in $pRef.Permissions) {
+                    try {
+                        switch ($permission) {
                             "Full Access" {
-                                [Void][Void]$verboseLogs.Add("Granting permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                [Void][Void]$verboseLogs.Add("Revoking permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
                                 # No error is thrown when user already has permission
-                                $addFAPermission = Add-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -AutoMapping:$AutoMapping -User $aRef.Guid -ErrorAction Stop
-                                [Void]$verboseLogs.Add("Successfully granted permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-
+                                $removeFAPermission = Remove-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -User $aRef.Guid -Confirm:$false -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully revoked permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                
                                 $success = $true
                                 $auditLogs.Add([PSCustomObject]@{
-                                        Action  = "GrantPermission"
-                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        Action  = "RevokePermission"
+                                        Message = "Successfully revoked permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                         IsError = $false
                                     }
                                 )
                             }
                             "Send As" {
-                                [Void]$verboseLogs.Add("Granting permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                [Void]$verboseLogs.Add("Revoking permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
                                 # No error is thrown when user already has permission
-                                $addSAPermission = Add-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
-                                [Void]$verboseLogs.Add("Successfully granted permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                $removeSAPermission = Remove-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully revoked permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
                                 $success = $true
                                 $auditLogs.Add([PSCustomObject]@{
-                                        Action  = "GrantPermission"
-                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        Action  = "RevokePermission"
+                                        Message = "Successfully revoked permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                         IsError = $false
                                     }
                                 )
                             }
                             "Send on Behalf" {
-                                [Void]$verboseLogs.Add("Granting permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                [Void]$verboseLogs.Add("Revoking permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
                                 # No error is thrown when user already has permission
                                 # Can only be assigned to mailbox (so just  a user account isn't sufficient, there has to be a mailbox for the user)
-                                $addSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{add="$($aRef.Guid)"} -Confirm:$false -ErrorAction Stop
-                                [Void]$verboseLogs.Add("Successfully granted permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                $removeSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{remove = "$($aRef.Guid)" } -Confirm:$false -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully revoked permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
                                 $success = $true
                                 $auditLogs.Add([PSCustomObject]@{
-                                        Action  = "GrantPermission"
-                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        Action  = "RevokePermission"
+                                        Message = "Successfully revoked permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                         IsError = $false
                                     }
                                 )
                             }
                         }
-                    } catch {
-                        if($_ -like "*object '$($pRef.id)' couldn't be found*"){
+                    }
+                    catch {
+                        if ($_ -like "*object '$($pRef.id)' couldn't be found*") {
                             [Void]$warningLogs.Add("Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
                             $success = $true
                             $auditLogs.Add([PSCustomObject]@{
-                                    Action  = "GrantPermission"
-                                    Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    Action  = "RevokePermission"
+                                    Message = "Successfully revoked ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                     IsError = $false
                                 }
                             )
-                        }elseif($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*"){
+                        }
+                        elseif ($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*") {
                             [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
                             $success = $true
                             $auditLogs.Add([PSCustomObject]@{
-                                    Action  = "GrantPermission"
-                                    Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    Action  = "RevokePermission"
+                                    Message = "Successfully revoked ermission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                     IsError = $false
                                 }
                             )
-                        }else{
+                        }
+                        else {
                             # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
-                            [Void]$warningLogs.Add("Error Granting permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                            [Void]$warningLogs.Add("Error Revoking permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
                             $success = $false
                             $auditLogs.Add([PSCustomObject]@{
-                                    Action  = "GrantPermission"
-                                    Message = "Failed to grant permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    Action  = "RevokePermission"
+                                    Message = "Failed to revoke permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                     IsError = $true
                                 }
                             )
                         }
                     }
                 }
-            } catch {
+            }
+            catch {
                 # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
-                [Void]$warningLogs.Add("Error Granting permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                [Void]$warningLogs.Add("Error Revoking permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
                 $success = $false
                 $auditLogs.Add([PSCustomObject]@{
-                        Action  = "GrantPermission"
-                        Message = "Failed to grant permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                        Action  = "RevokePermission"
+                        Message = "Failed to revoke permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                         IsError = $true
                     }
                 )
-            } finally {
+            }
+            finally {
                 $returnobject = @{
                     success         = $success
                     auditLogs       = $auditLogs
@@ -309,33 +321,35 @@ try {
                     warningLogs     = $warningLogs
                     errorLogs       = $errorLogs
                 }
-                Remove-Variable ("aRef","pRef","success","auditLogs","verboseLogs","informationLogs","warningLogs","errorLogs")     
-                Write-Output $returnobject 
+                Remove-Variable ("aRef", "pRef", "success", "auditLogs", "verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
+                Write-Output $returnobject
             }
         }
     }
-    $success = $addExoMailboxPermission.success
-    $auditLogs = $addExoMailboxPermission.auditLogs
+    $success = $removeExoMailboxPermission.success
+    $auditLogs = $removeExoMailboxPermission.auditLogs
 
     # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-    $verboseLogs = $addExoMailboxPermission.verboseLogs
-    foreach($verboseLog in $verboseLogs){ Write-Verbose $verboseLog }
-    $informationLogs = $addExoMailboxPermission.informationLogs
-    foreach($informationLog in $informationLogs){ Write-Information $informationLog }
-    $warningLogs = $addExoMailboxPermission.warningLogs
-    foreach($warningLog in $warningLogs){ Write-Warning $warningLog }
-    $errorLogs = $addExoMailboxPermission.errorLogs
-    foreach($errorLog in $errorLogs){ Write-Warning $errorLog }
+    $verboseLogs = $removeExoMailboxPermission.verboseLogs
+    foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
+    $informationLogs = $removeExoMailboxPermission.informationLogs
+    foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
+    $warningLogs = $removeExoMailboxPermission.warningLogs
+    foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+    $errorLogs = $removeExoMailboxPermission.errorLogs
+    foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+    if ($errorLogs.Count -ge 1) { throw }
 }
 catch {
     $auditLogs.Add([PSCustomObject]@{
-            Action  = "GrantPermission"
-            Message = "Failed to grant permission:  $_"
+            Action  = "RevokePermission"
+            Message = "Failed to revoke permission:  $_"
             IsError = $True
         })
     $success = $false
     Write-Warning $_
-} finally {
+}
+finally {
     Start-Sleep 1
     if ($null -ne $remoteSession) {           
         Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt

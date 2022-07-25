@@ -1,0 +1,35 @@
+[
+  {
+    "key": "AzureADOrganization",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Azure AD Organization",
+      "placeholder": "enyoi.onmicrosoft.com",
+      "description": "The Tenant Name of the organization in Azure",
+      "required": true
+    }
+  },
+  {
+    "key": "AzureADAppId",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Azure AD App Id",
+      "placeholder": "1234567-2538-4922-80e2-b890abcde",
+      "description": "The ID of the App Registration in Azure with the Exchange permissions to the specfied organization",
+      "required": true
+    }
+  },
+  {
+    "key": "AzureADCertificateThumbprint",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Azure AD Certificate Thumbprint",
+      "placeholder": "12345678907FC55D11D21516DB4BE0057ABCDEFG",
+      "description": "The Thumbprint of the Certificate linked to the specified App Registration",
+      "required": true
+    }
+  }
+]

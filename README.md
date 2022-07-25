@@ -10,6 +10,7 @@
 ## Versioning
 | Version | Description | Date |
 | - | - | - |
+| 1.0.2   | Added examples to connect using a certificate | 2022/07/25  |
 | 1.0.1   | Updated to only import the modules we use for performance increase | 2022/07/04  |
 | 1.0.0   | Initial release | 2022/03/30  |
 
@@ -21,6 +22,8 @@
 - [Introduction](#introduction)
 - [Installing the Microsoft Exchange Online PowerShell V2 module](#installing-the-microsoft-exchange-online-powershell-v2-module)
   - [Connection settings](#connection-settings)
+    - [Connect Using Username + Password](#connect-using-username--password)
+    - [Connect Using Certificate](#connect-using-certificate)
 - [Getting help](#getting-help)
 - [HelloID Docs](#helloid-docs)
 
@@ -30,6 +33,7 @@
 - Required to run **On-Premises** since it is not allowed to import a module with the Cloud Agent.
 - **Concurrent sessions** in HelloID set to a **maximum of 1**! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
 - Since we create a Remote PS Session on the agent server (which will containt the Exchange Session, to avoid the Exchange limit of 3 sessions per minute), the service account has to be a member of the group “**Remote Management Users**”.
+- When using a certificate to connect, an __App Registration in Azure AD__ is required. __Please follow the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps) as reference to configure the App Registration correctly__
 
 ## Introduction
 For this connector we have the option to correlate to existing Exchange Online (Office 365) users and provision groupmemberships and/or permission(s) to a shared mailbox.
@@ -45,12 +49,20 @@ Please follow the [Microsoft documentation on how to install the module](https:/
 
 
 ### Connection settings
-The following settings are required to connect.
+Depending on the selected scripts, either of the following settings are required to connect.
 
+#### Connect Using Username + Password
 | Setting     | Description |
 | ------------ | ----------- |
 | Username | The username of a Global Admin in Exchange Online (Office 365) |
 | Password | The password of the Global Admin in Exchange Online (Office 365) |
+
+#### Connect Using Certificate
+| Setting     | Description |
+| ------------ | ----------- |
+| Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists __Please note: This has to be the .onmicrosoft domain name__ |
+| Azure AD App Id | The App ID of the Azure AD App Registration with Exchange Permissions. __Please follow the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps) as reference to configure the App Registration correctly__  |
+| Azure AD Certificate Thumbprint | The thumbprint of the certificate that is linked to the zure AD App Registration __Please note: This certificate has to be locally installed__|
 
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012518799-How-to-add-a-target-system) pages_

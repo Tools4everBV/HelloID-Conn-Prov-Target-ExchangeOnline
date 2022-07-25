@@ -7,9 +7,11 @@ $VerbosePreference = "SilentlyContinue"
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 #region functions
 # Write functions logic here
@@ -48,7 +50,8 @@ function Set-PSSession {
             $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
         }        
         Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-    } catch {
+    }
+    catch {
         Write-Verbose "Remote Powershell session not found: $($_)"
     }
 
@@ -57,7 +60,8 @@ function Set-PSSession {
             $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
             $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionName -SessionOption $remotePSSessionOption
             Write-Verbose "Remote Powershell session is created, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-        } catch {
+        }
+        catch {
             throw "Couldn't created a PowerShell Session: $($_.Exception.Message)"
         }
     }
@@ -113,71 +117,76 @@ try {
         }
 
         # Check if Exchange Connection already exists
-        try{
+        try {
             $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
             $connectedToExchange = $true
-        }catch{
-            if($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*"){
+        }
+        catch {
+            if ($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*") {
                 $connectedToExchange = $false
             }
         }
         
         # Connect to Exchange
-        try{
-            if($connectedToExchange -eq $false){
+        try {
+            if ($connectedToExchange -eq $false) {
                 [Void]$verboseLogs.Add("Connecting to Exchange Online..")
 
-                # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                 $exchangeSessionParams = @{
-                    Credential = $credential
-                    PSSessionOption = $remotePSSessionOption
-                    CommandName = $commands
-                    ShowBanner = $false
-                    ShowProgress = $false
-                    ErrorAction = 'Stop'
+                    Organization          = $using:AADOrganization
+                    AppID                 = $using:AADAppID
+                    CertificateThumbPrint = $using:AADCertificateThumbprint
+                    CommandName           = $commands
+                    ShowBanner            = $false
+                    ShowProgress          = $false
+                    TrackPerformance      = $false
+                    ErrorAction           = 'Stop'
                 }
                 $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
                 
                 [Void]$informationLogs.Add("Successfully connected to Exchange Online")
-            }else{
+            }
+            else {
                 [Void]$verboseLogs.Add("Already connected to Exchange Online")
             }
         }
         catch {
             if (-Not [string]::IsNullOrEmpty($_.Exception.InnerExceptions)) {
                 $errorMessage = "$($_.Exception.InnerExceptions)"
-            }else{
+            }
+            else {
                 $errorMessage = "$($_.Exception.Message) $($_.ScriptStackTrace)"
             }
             [Void]$warningLogs.Add($errorMessage)
-            throw "Could not connect to Exchange Online, error: $_"
-        } finally {
+            [Void]$errorLogs.Add("Could not connect to Exchange Online, error: $_")
+        }
+        finally {
             $returnobject = @{
                 verboseLogs     = $verboseLogs
                 informationLogs = $informationLogs
                 warningLogs     = $warningLogs
                 errorLogs       = $errorLogs
             }
-            Remove-Variable ("verboseLogs","informationLogs","warningLogs","errorLogs")     
+            Remove-Variable ("verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
             Write-Output $returnobject 
         }
     }
 
     # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
     $verboseLogs = $createSessionResult.verboseLogs
-    foreach($verboseLog in $verboseLogs){ Write-Verbose $verboseLog }
+    foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
     $informationLogs = $createSessionResult.informationLogs
-    foreach($informationLog in $informationLogs){ Write-Information $informationLog }
+    foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
     $warningLogs = $createSessionResult.warningLogs
-    foreach($warningLog in $warningLogs){ Write-Warning $warningLog }
+    foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     $errorLogs = $createSessionResult.errorLogs
-    foreach($errorLog in $errorLogs){ Write-Warning $errorLog }
+    foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+    if ($errorLogs.Count -ge 1) { throw }
 
     # Get Exchange Online groups
     $getExoGroups = Invoke-Command -Session $remoteSession -ScriptBlock {
-        try{
+        try {
             # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
             $verboseLogs = [System.Collections.ArrayList]::new()
             $informationLogs = [System.Collections.ArrayList]::new()
@@ -190,34 +199,38 @@ try {
             # Filter Cloud-Only groups (IsDirSynced -eq 'False')
             $groups = Get-DistributionGroup -Filter "IsDirSynced -eq 'False'" -ResultSize Unlimited
             [Void]$informationLogs.Add("Finished searching for Exchange Groups. Found [$($groups.id.Count) groups]")
-        } catch {
+        }
+        catch {
             throw "Could not gather Exchange groups. Error: $_"
-        } finally {
+        }
+        finally {
             $returnobject = @{
-                groups         = $groups
+                groups          = $groups
                 verboseLogs     = $verboseLogs
                 informationLogs = $informationLogs
                 warningLogs     = $warningLogs
                 errorLogs       = $errorLogs
             }
-            Remove-Variable ("groups","verboseLogs","informationLogs","warningLogs","errorLogs")     
+            Remove-Variable ("groups", "verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
             Write-Output $returnobject 
         }
     }
 
     # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
     $verboseLogs = $getExoGroups.verboseLogs
-    foreach($verboseLog in $verboseLogs){ Write-Verbose $verboseLog }
+    foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
     $informationLogs = $getExoGroups.informationLogs
-    foreach($informationLog in $informationLogs){ Write-Information $informationLog }
+    foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
     $warningLogs = $getExoGroups.warningLogs
-    foreach($warningLog in $warningLogs){ Write-Warning $warningLog }
+    foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     $errorLogs = $getExoGroups.errorLogs
-    foreach($errorLog in $errorLogs){ Write-Warning $errorLog }
+    foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+    if ($errorLogs.Count -ge 1) { throw }
 }
 catch {
     throw "Could not gather Exchange groups. Error: $_"
-} finally {
+}
+finally {
     Start-Sleep 1
     if ($null -ne $remoteSession) {           
         Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
@@ -228,8 +241,8 @@ catch {
 
 # Send results
 $groups = $getExoGroups.groups
-foreach($group in $groups){
-    switch($group.RecipientType){
+foreach ($group in $groups) {
+    switch ($group.RecipientType) {
         "MailUniversalSecurityGroup" {
             $groupType = "Mail-enabled Security Group"
         }
@@ -239,9 +252,9 @@ foreach($group in $groups){
     }
     
     $permission = @{
-        DisplayName = "$($groupType) - $($group.DisplayName)"
+        DisplayName    = "$($groupType) - $($group.DisplayName)"
         Identification = @{
-            Id = $group.Guid
+            Id   = $group.Guid
             Name = $group.DisplayName
         }
     }

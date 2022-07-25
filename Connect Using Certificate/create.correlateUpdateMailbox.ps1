@@ -1,14 +1,6 @@
-#region Initialize default properties
 $c = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
-$m = $manager | ConvertFrom-Json
-$aRef = $accountReference | ConvertFrom-Json
-$mRef = $managerAccountReference | ConvertFrom-Json
-
-# The permissionReference object contains the Identification object provided in the retrieve permissions call
-$pRef = $permissionReference | ConvertFrom-Json
-
-$success = $True
+$success = $false
 $auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
@@ -18,15 +10,32 @@ $VerbosePreference = "SilentlyContinue"
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
+
+# Change mapping here
+$account = [PSCustomObject]@{
+    userPrincipalName         = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
+    language                  = 'nl-NL'
+    dateFormat                = 'dd-MM-yy'
+    timeFormat                = "H:mm" 
+    timeZone                  = "W. Europe Standard Time" 
+    localizeDefaultFolderName = $true
+}
 
 # Troubleshooting
-# $aRef = @{
-#     Guid = "ae71715a-2964-4ce6-844a-b684d61aa1e5"
-#     UserPrincipalName = "user@enyoi.onmicrosoft.com"
+# $account = [PSCustomObject]@{
+#     UserPrincipalName         = "user@enyoi.onmicrosoft.com"
+#     language                  = 'nl-NL'
+#     dateFormat                = 'dd-MM-yy'
+#     timeFormat                = "H:mm" 
+#     timeZone                  = "W. Europe Standard Time" 
+#     localizeDefaultFolderName = $true
 # }
+
 # $dryRun = $false
 
 #region functions
@@ -66,7 +75,8 @@ function Set-PSSession {
             $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
         }        
         Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-    } catch {
+    }
+    catch {
         Write-Verbose "Remote Powershell session not found: $($_)"
     }
 
@@ -75,7 +85,8 @@ function Set-PSSession {
             $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
             $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionName -SessionOption $remotePSSessionOption
             Write-Verbose "Remote Powershell session is created, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-        } catch {
+        }
+        catch {
             throw "Couldn't created a PowerShell Session: $($_.Exception.Message)"
         }
     }
@@ -88,7 +99,7 @@ function Set-PSSession {
 #endregion functions
 
 try {
-    if($dryRun -eq $false){
+    if ($dryRun -eq $false) {
         $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
         Connect-PSSession $remoteSession | out-null                                                                            
 
@@ -104,6 +115,9 @@ try {
             $moduleName = "ExchangeOnlineManagement"
             $commands = @(
                 "Get-User",
+                "Get-EXOMailbox",
+                "Get-MailboxRegionalConfiguration",
+                "Set-MailboxRegionalConfiguration",
                 "Get-DistributionGroup",
                 "Add-DistributionGroupMember",
                 "Remove-DistributionGroupMember",
@@ -132,74 +146,77 @@ try {
             }
 
             # Check if Exchange Connection already exists
-            try{
+            try {
                 $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
                 $connectedToExchange = $true
-            }catch{
-                if($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*"){
+            }
+            catch {
+                if ($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*") {
                     $connectedToExchange = $false
                 }
             }
             
             # Connect to Exchange
-            try{
-                if($connectedToExchange -eq $false){
+            try {
+                if ($connectedToExchange -eq $false) {
                     [Void]$verboseLogs.Add("Connecting to Exchange Online..")
-    
-                    # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                    $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                    $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+
+                    # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                     $exchangeSessionParams = @{
-                        Credential = $credential
-                        PSSessionOption = $remotePSSessionOption
-                        CommandName = $commands
-                        ShowBanner = $false
-                        ShowProgress = $false
-                        ErrorAction = 'Stop'
+                        Organization          = $using:AADOrganization
+                        AppID                 = $using:AADAppID
+                        CertificateThumbPrint = $using:AADCertificateThumbprint
+                        CommandName           = $commands
+                        ShowBanner            = $false
+                        ShowProgress          = $false
+                        TrackPerformance      = $false
+                        ErrorAction           = 'Stop'
                     }
                     $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
-                    
+
                     [Void]$informationLogs.Add("Successfully connected to Exchange Online")
-                }else{
+                }
+                else {
                     [Void]$verboseLogs.Add("Already connected to Exchange Online")
                 }
             }
             catch {
                 if (-Not [string]::IsNullOrEmpty($_.Exception.InnerExceptions)) {
                     $errorMessage = "$($_.Exception.InnerExceptions)"
-                }else{
+                }
+                else {
                     $errorMessage = "$($_.Exception.Message) $($_.ScriptStackTrace)"
                 }
                 [Void]$warningLogs.Add($errorMessage)
-                throw "Could not connect to Exchange Online, error: $_"
-            } finally {
+                [Void]$errorLogs.Add("Could not connect to Exchange Online, error: $_")
+            }
+            finally {
                 $returnobject = @{
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
                     warningLogs     = $warningLogs
                     errorLogs       = $errorLogs
                 }
-                Remove-Variable ("verboseLogs","informationLogs","warningLogs","errorLogs")     
+                Remove-Variable ("verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
                 Write-Output $returnobject 
             }
         }
 
         # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
         $verboseLogs = $createSessionResult.verboseLogs
-        foreach($verboseLog in $verboseLogs){ Write-Verbose $verboseLog }
+        foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
         $informationLogs = $createSessionResult.informationLogs
-        foreach($informationLog in $informationLogs){ Write-Information $informationLog }
+        foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
         $warningLogs = $createSessionResult.warningLogs
-        foreach($warningLog in $warningLogs){ Write-Warning $warningLog }
+        foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
         $errorLogs = $createSessionResult.errorLogs
-        foreach($errorLog in $errorLogs){ Write-Warning $errorLog }
+        foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+        if ($errorLogs.Count -ge 1) { throw }
 
-        # Grant Exchange Online Groupmembership
-        $addExoGroupMembership = Invoke-Command -Session $remoteSession -ScriptBlock {
-            try{
-                $aRef = $using:aRef
-                $pRef = $using:pRef
 
+        # Get Exchange Online Mailbox
+        $getExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
+            try {
                 $success = $false
                 $auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
 
@@ -209,92 +226,86 @@ try {
                 $warningLogs = [System.Collections.ArrayList]::new()
                 $errorLogs = [System.Collections.ArrayList]::new()
 
-                [Void]$verboseLogs.Add("Granting permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                $addDGMember = Add-DistributionGroupMember -Identity $pRef.id -Member $aRef.Guid -BypassSecurityGroupManagerCheck:$true -Confirm:$false -ErrorAction Stop
-                [Void]$verboseLogs.Add("Successfully granted Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                $account = $using:account
 
+                if ([string]::IsNullOrEmpty($account.userPrincipalName)) { throw "No UserPrincipalName provided" }  
+            
+                [Void]$verboseLogs.Add("Identity: $($account.userPrincipalName)")
+                $mailbox = Get-EXOMailbox -Identity $account.userPrincipalName -ErrorAction Stop
+
+                if ($mailbox -eq $null) { throw "Failed to return a mailbox for $($account.userPrincipalName)" }
+
+                $aRef = @{
+                    Guid              = $mailbox.Guid
+                    UserPrincipalName = $mailbox.UserPrincipalName
+                }
+
+                # Set Mailbox to dutch
+                $mailboxSplatParams = @{
+                    Language                  = $($account.language)
+                    DateFormat                = $($account.dateFormat)
+                    TimeFormat                = $($account.timeFormat)
+                    TimeZone                  = $($account.timeZone)
+                    LocalizeDefaultFolderName = $($account.localizeDefaultFolderName)
+                }
+
+                [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
+                $mailbox | Get-MailboxRegionalConfiguration | Set-MailboxRegionalConfiguration @mailboxSplatParams  -ErrorAction Stop
+                [Void]$informationLogs.Add("Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
+
+                [Void]$informationLogs.Add("Account correlated to and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid))")
                 $success = $true
                 $auditLogs.Add([PSCustomObject]@{
-                        Action  = "GrantPermission"
-                        Message = "Successfully granted Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                        Action  = "CreateAccount"
+                        Message = "Account correlated to and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid))"
                         IsError = $false
-                    }
-                )      
-            } catch {
-                if($_ -like "*already a member of the group*"){
-                    [Void]$warningLogs.Add("The recipient $($aRef.UserPrincipalName) ($($aRef.Guid)) is already a member of the group $($pRef.Name) ($($pRef.id))")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Successfully granted Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }elseif($_ -like "*object '$($pRef.id)' couldn't be found*"){
-                    [Void]$warningLogs.Add("Group $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Successfully granted Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }elseif($_ -like "*Couldn't find object ""$($aRef.Guid)""*"){
-                    [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
-                    $success = $true
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Successfully granted Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        }
-                    )
-                }else{
-                    # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
-                    [Void]$warningLogs.Add("Error Granting Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
-                    $success = $false
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Failed to grant Permission $($pRef.Name) ($($pRef.id)) to $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                            IsError = $true
-                        }
-                    )
-                }
-            } finally {
+                    })
+            }
+            catch { 
+                throw $_
+            }
+            finally {
                 $returnobject = @{
+                    mailbox         = $mailbox
+                    aRef            = $aRef
                     success         = $success
-                    auditLogs       = $auditLogs 
+                    auditLogs       = $auditLogs
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
                     warningLogs     = $warningLogs
                     errorLogs       = $errorLogs
                 }
-                Remove-Variable ("aRef","pRef","success","auditLogs","verboseLogs","informationLogs","warningLogs","errorLogs") 
+                Remove-Variable ("account", "mailbox", "success", "auditLogs", "verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
                 Write-Output $returnobject 
             }
         }
     }
-    $success = $addExoGroupMembership.success
-    $auditLogs = $addExoGroupMembership.auditLogs
+
+    $aRef = $getExoMailbox.aRef
+    $success = $getExoMailbox.success
+    $auditLogs = $getExoMailbox.auditLogs
 
     # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-    $verboseLogs = $addExoGroupMembership.verboseLogs
-    foreach($verboseLog in $verboseLogs){ Write-Verbose $verboseLog }
-    $informationLogs = $addExoGroupMembership.informationLogs
-    foreach($informationLog in $informationLogs){ Write-Information $informationLog }
-    $warningLogs = $addExoGroupMembership.warningLogs
-    foreach($warningLog in $warningLogs){ Write-Warning $warningLog }
-    $errorLogs = $addExoGroupMembership.errorLogs
-    foreach($errorLog in $errorLogs){ Write-Warning $errorLog }    
+    $verboseLogs = $getExoMailbox.verboseLogs
+    foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
+    $informationLogs = $getExoMailbox.informationLogs
+    foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
+    $warningLogs = $getExoMailbox.warningLogs
+    foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+    $errorLogs = $getExoMailbox.errorLogs
+    foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+    if ($errorLogs.Count -ge 1) { throw }
 }
 catch {
     $auditLogs.Add([PSCustomObject]@{
-            Action  = "GrantPermission"
-            Message = "Failed to grant permission:  $_"
+            Action  = "CreateAccount"
+            Message = "Account failed to correlate and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid)):  $_"
             IsError = $True
         })
     $success = $false
     Write-Warning $_
-} finally {
+}
+finally {
     Start-Sleep 1
     if ($null -ne $remoteSession) {           
         Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
@@ -302,12 +313,20 @@ catch {
     }      
 }
 
+# Send results
+$mailbox = $getExoMailbox.mailbox
+$result = [PSCustomObject]@{
+    Success          = $success
+    AccountReference = $aRef
+    AuditLogs        = $auditLogs
+    Account          = $account
 
-#build up result
-$result = [PSCustomObject]@{ 
-    Success   = $success
-    AuditLogs = $auditLogs
-    # Account   = [PSCustomObject]@{ }
+    # Optionally return data for use in other systems
+    ExportData       = [PSCustomObject]@{
+        DisplayName       = $mailbox.DisplayName
+        UserPrincipalName = $mailbox.UserPrincipalName
+        Guid              = $mailbox.Guid
+    }
 }
 
 Write-Output $result | ConvertTo-Json -Depth 10

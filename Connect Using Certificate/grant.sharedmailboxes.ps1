@@ -1,6 +1,14 @@
+#region Initialize default properties
 $c = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
-$success = $false
+$m = $manager | ConvertFrom-Json
+$aRef = $accountReference | ConvertFrom-Json
+$mRef = $managerAccountReference | ConvertFrom-Json
+
+# The permissionReference object contains the Identification object provided in the retrieve permissions call
+$pRef = $permissionReference | ConvertFrom-Json
+
+$success = $True
 $auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
@@ -10,30 +18,19 @@ $VerbosePreference = "SilentlyContinue"
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
-# Change mapping here
-$account = [PSCustomObject]@{
-    userPrincipalName         = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
-    language                  = 'nl-NL'
-    dateFormat                = 'dd-MM-yy'
-    timeFormat                = "H:mm" 
-    timeZone                  = "W. Europe Standard Time" 
-    localizeDefaultFolderName = $true
-}
+$autoMapping = $true
 
 # Troubleshooting
-# $account = [PSCustomObject]@{
-#     UserPrincipalName         = "user@enyoi.onmicrosoft.com"
-#     language                  = 'nl-NL'
-#     dateFormat                = 'dd-MM-yy'
-#     timeFormat                = "H:mm" 
-#     timeZone                  = "W. Europe Standard Time" 
-#     localizeDefaultFolderName = $true
+# $aRef = @{
+#     Guid = "ae71715a-2964-4ce6-844a-b684d61aa1e5"
+#     UserPrincipalName = "user@enyoi.onmicrosoft.com"
 # }
-
 # $dryRun = $false
 
 #region functions
@@ -111,12 +108,8 @@ try {
                 
             # Import module
             $moduleName = "ExchangeOnlineManagement"
-
             $commands = @(
                 "Get-User",
-                "Get-EXOMailbox",
-                "Get-MailboxRegionalConfiguration",
-                "Set-MailboxRegionalConfiguration",
                 "Get-DistributionGroup",
                 "Add-DistributionGroupMember",
                 "Remove-DistributionGroupMember",
@@ -160,19 +153,19 @@ try {
                 if ($connectedToExchange -eq $false) {
                     [Void]$verboseLogs.Add("Connecting to Exchange Online..")
     
-                    # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                    $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                    $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                    # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                     $exchangeSessionParams = @{
-                        Credential = $credential
-                        PSSessionOption = $remotePSSessionOption
-                        CommandName = $commands
-                        ShowBanner = $false
-                        ShowProgress = $false
-                        ErrorAction = 'Stop'
+                        Organization          = $using:AADOrganization
+                        AppID                 = $using:AADAppID
+                        CertificateThumbPrint = $using:AADCertificateThumbprint
+                        CommandName           = $commands
+                        ShowBanner            = $false
+                        ShowProgress          = $false
+                        TrackPerformance      = $false
+                        ErrorAction           = 'Stop'
                     }
                     $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
-                    
+
                     [Void]$informationLogs.Add("Successfully connected to Exchange Online")
                 }
                 else {
@@ -187,7 +180,7 @@ try {
                     $errorMessage = "$($_.Exception.Message) $($_.ScriptStackTrace)"
                 }
                 [Void]$warningLogs.Add($errorMessage)
-                throw "Could not connect to Exchange Online, error: $_"
+                [Void]$errorLogs.Add("Could not connect to Exchange Online, error: $_")
             }
             finally {
                 $returnobject = @{
@@ -209,12 +202,15 @@ try {
         $warningLogs = $createSessionResult.warningLogs
         foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
         $errorLogs = $createSessionResult.errorLogs
-        foreach ($errorLog in $errorLogs) { Write-Warning $errorLog }
+        foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+        if ($errorLogs.Count -ge 1) { throw }
 
-
-        # Get Exchange Online Mailbox
-        $getExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
+        # Grant Exchange Online Mailbox permission
+        $addExoMailboxPermission = Invoke-Command -Session $remoteSession -ScriptBlock {
             try {
+                $aRef = $using:aRef
+                $pRef = $using:pRef
+
                 $success = $false
                 $auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
 
@@ -224,48 +220,102 @@ try {
                 $warningLogs = [System.Collections.ArrayList]::new()
                 $errorLogs = [System.Collections.ArrayList]::new()
 
-                $account = $using:account
+                foreach ($permission in $pRef.Permissions) {
+                    try {
+                        switch ($permission) {
+                            "Full Access" {
+                                [Void][Void]$verboseLogs.Add("Granting permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                $addFAPermission = Add-MailboxPermission -Identity $pRef.id -AccessRights FullAccess -InheritanceType All -AutoMapping:$AutoMapping -User $aRef.Guid -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully granted permission FullAccess to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
-                if ([string]::IsNullOrEmpty($account.userPrincipalName)) { throw "No UserPrincipalName provided" }  
-            
-                [Void]$verboseLogs.Add("Identity: $($account.userPrincipalName)")
-                $mailbox = Get-EXOMailbox -Identity $account.userPrincipalName -ErrorAction Stop
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "GrantPermission"
+                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                            "Send As" {
+                                [Void]$verboseLogs.Add("Granting permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                $addSAPermission = Add-RecipientPermission -Identity $pRef.id -AccessRights SendAs -Confirm:$false -Trustee $aRef.Guid -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully granted permission SendAs to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
-                if ($mailbox -eq $null) { throw "Failed to return a mailbox for $($account.userPrincipalName)" }
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "GrantPermission"
+                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                            "Send on Behalf" {
+                                [Void]$verboseLogs.Add("Granting permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                # No error is thrown when user already has permission
+                                # Can only be assigned to mailbox (so just  a user account isn't sufficient, there has to be a mailbox for the user)
+                                $addSoBPermission = Set-Mailbox -Identity $pRef.id -GrantSendOnBehalfTo @{add = "$($aRef.Guid)" } -Confirm:$false -ErrorAction Stop
+                                [Void]$verboseLogs.Add("Successfully granted permission SendonBehalf to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
-                $aRef = @{
-                    Guid              = $mailbox.Guid
-                    UserPrincipalName = $mailbox.UserPrincipalName
+                                $success = $true
+                                $auditLogs.Add([PSCustomObject]@{
+                                        Action  = "GrantPermission"
+                                        Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                        IsError = $false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    catch {
+                        if ($_ -like "*object '$($pRef.id)' couldn't be found*") {
+                            [Void]$warningLogs.Add("Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action")
+                            $success = $true
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "GrantPermission"
+                                    Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $false
+                                }
+                            )
+                        }
+                        elseif ($_ -like "*User or group ""$($aRef.Guid)"" wasn't found*") {
+                            [Void]$warningLogs.Add("User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action")
+                            $success = $true
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "GrantPermission"
+                                    Message = "Successfully granted permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $false
+                                }
+                            )
+                        }
+                        else {
+                            # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
+                            [Void]$warningLogs.Add("Error Granting permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                            $success = $false
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Action  = "GrantPermission"
+                                    Message = "Failed to grant permission $($permission) to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                    IsError = $true
+                                }
+                            )
+                        }
+                    }
                 }
-
-                # Set Mailbox to dutch
-                $mailboxSplatParams = @{
-                    Language                  = $($account.language)
-                    DateFormat                = $($account.dateFormat)
-                    TimeFormat                = $($account.timeFormat)
-                    TimeZone                  = $($account.timeZone)
-                    LocalizeDefaultFolderName = $($account.localizeDefaultFolderName)
-                }
-
-                [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
-                $mailbox | Get-MailboxRegionalConfiguration | Set-MailboxRegionalConfiguration @mailboxSplatParams  -ErrorAction Stop
-                [Void]$informationLogs.Add("Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
-
-                [Void]$informationLogs.Add("Account correlated to and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid))")
-                $success = $true
-                $auditLogs.Add([PSCustomObject]@{
-                        Action  = "CreateAccount"
-                        Message = "Account correlated to and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid))"
-                        IsError = $false
-                    })
             }
-            catch { 
-                throw $_
+            catch {
+                # Log error for further analysis.  Contact Tools4ever Support to further troubleshoot
+                [Void]$warningLogs.Add("Error Granting permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error: $_")
+                $success = $false
+                $auditLogs.Add([PSCustomObject]@{
+                        Action  = "GrantPermission"
+                        Message = "Failed to grant permission $($pRef.Permissions -join ",") to mailbox $($pRef.Name) ($($pRef.id)) for user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                        IsError = $true
+                    }
+                )
             }
             finally {
                 $returnobject = @{
-                    mailbox         = $mailbox
-                    aRef            = $aRef
                     success         = $success
                     auditLogs       = $auditLogs
                     verboseLogs     = $verboseLogs
@@ -273,30 +323,29 @@ try {
                     warningLogs     = $warningLogs
                     errorLogs       = $errorLogs
                 }
-                Remove-Variable ("account", "mailbox", "success", "auditLogs", "verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
+                Remove-Variable ("aRef", "pRef", "success", "auditLogs", "verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
                 Write-Output $returnobject 
             }
         }
     }
-
-    $aRef = $getExoMailbox.aRef
-    $success = $getExoMailbox.success
+    $success = $addExoMailboxPermission.success
     $auditLogs = $addExoMailboxPermission.auditLogs
 
     # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-    $verboseLogs = $getExoMailbox.verboseLogs
+    $verboseLogs = $addExoMailboxPermission.verboseLogs
     foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-    $informationLogs = $getExoMailbox.informationLogs
+    $informationLogs = $addExoMailboxPermission.informationLogs
     foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-    $warningLogs = $getExoMailbox.warningLogs
+    $warningLogs = $addExoMailboxPermission.warningLogs
     foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
-    $errorLogs = $getExoMailbox.errorLogs
-    foreach ($errorLog in $errorLogs) { Write-Warning $errorLog }
+    $errorLogs = $addExoMailboxPermission.errorLogs
+    foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
+    if ($errorLogs.Count -ge 1) { throw }
 }
 catch {
     $auditLogs.Add([PSCustomObject]@{
-            Action  = "CreateAccount"
-            Message = "Account failed to correlate and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid)):  $_"
+            Action  = "GrantPermission"
+            Message = "Failed to grant permission:  $_"
             IsError = $True
         })
     $success = $false
@@ -310,20 +359,12 @@ finally {
     }      
 }
 
-# Send results
-$mailbox = $getExoMailbox.mailbox
-$result = [PSCustomObject]@{
-    Success          = $success
-    AccountReference = $aRef
-    AuditLogs        = $auditLogs
-    Account          = $account
 
-    # Optionally return data for use in other systems
-    ExportData       = [PSCustomObject]@{
-        DisplayName       = $mailbox.DisplayName
-        UserPrincipalName = $mailbox.UserPrincipalName
-        Guid              = $mailbox.Guid
-    }
+#build up result
+$result = [PSCustomObject]@{ 
+    Success   = $success
+    AuditLogs = $auditLogs
+    # Account   = [PSCustomObject]@{ }
 }
 
 Write-Output $result | ConvertTo-Json -Depth 10
