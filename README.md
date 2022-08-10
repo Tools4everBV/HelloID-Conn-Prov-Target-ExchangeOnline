@@ -34,6 +34,7 @@
 - **Concurrent sessions** in HelloID set to a **maximum of 1**! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
 - Since we create a Remote PS Session on the agent server (which will containt the Exchange Session, to avoid the Exchange limit of 3 sessions per minute), the service account has to be a member of the group “**Remote Management Users**”.
 - When using a certificate to connect, an __App Registration in Azure AD__ is required. __Please follow the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps) as reference to configure the App Registration correctly__
+- When using a username + password to connect, __MFA is not supported__, so the user account will have to be __excluded from MFA__.
 
 ## Introduction
 For this connector we have the option to correlate to existing Exchange Online (Office 365) users and provision groupmemberships and/or permission(s) to a shared mailbox.
