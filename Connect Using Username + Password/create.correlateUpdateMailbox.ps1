@@ -253,7 +253,7 @@ try {
                 }
 
                 [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
-                $mailbox | Get-MailboxRegionalConfiguration | Set-MailboxRegionalConfiguration @mailboxSplatParams  -ErrorAction Stop
+                Get-MailboxRegionalConfiguration -Identity $mailbox.Guid | Set-MailboxRegionalConfiguration @mailboxSplatParams  -ErrorAction Stop
                 [Void]$informationLogs.Add("Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
 
                 [Void]$informationLogs.Add("Account correlated to and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid))")
