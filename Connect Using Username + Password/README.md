@@ -30,7 +30,7 @@
 - Required to run **On-Premises** since it is not allowed to import a module with the Cloud Agent.
 - **Concurrent sessions** in HelloID set to a **maximum of 1**! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
 - Since we create a Remote PS Session on the agent server (which will containt the Exchange Session, to avoid the Exchange limit of 3 sessions per minute), the service account has to be a member of the group “**Remote Management Users**”.
-- The Exchange Account has to be *excluded from MFA*
+- The Exchange Account has to be **excluded from MFA**
 
 ## Introduction
 For this connector we have the option to correlate to existing Exchange Online (Office 365) users and provision groupmemberships and/or permission(s) to a shared mailbox.
