@@ -245,6 +245,7 @@ try {
 
                 # Set Mailbox to dutch
                 $mailboxSplatParams = @{
+                    Identity                  = $($mailbox.Guid)
                     Language                  = $($account.language)
                     DateFormat                = $($account.dateFormat)
                     TimeFormat                = $($account.timeFormat)
@@ -253,7 +254,7 @@ try {
                 }
 
                 [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
-                Get-MailboxRegionalConfiguration -Identity $mailbox.Guid | Set-MailboxRegionalConfiguration @mailboxSplatParams  -ErrorAction Stop
+                $null = Set-MailboxRegionalConfiguration @mailboxSplatParams -ErrorAction Stop
                 [Void]$informationLogs.Add("Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
 
                 [Void]$informationLogs.Add("Account correlated to and updated fields of $($aRef.userPrincipalName) ($($aRef.Guid))")
