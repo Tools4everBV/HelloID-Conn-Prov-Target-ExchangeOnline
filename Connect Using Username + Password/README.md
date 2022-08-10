@@ -50,8 +50,9 @@ The following settings are required to connect.
 
 | Setting     | Description |
 | ------------ | ----------- |
+| Domain | The username of a Global Admin in Exchange Online (Office 365) |
 | Username | The username of a Global Admin in Exchange Online (Office 365) |
-| Password | The password of the Global Admin in Exchange Online (Office 365) |
+| Password | The Exchange Online (Office 365) domain name to manage. Be sure to use an .onmicrosoft.com domain for the parameter value. Otherwise, you might encounter cryptic permission issues when you run commands in the app context |
 
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012518799-How-to-add-a-target-system) pages_

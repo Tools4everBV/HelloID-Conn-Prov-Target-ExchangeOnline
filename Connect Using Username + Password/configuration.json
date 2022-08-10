@@ -1,5 +1,16 @@
 [
   {
+    "key": "Domain",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Domain",
+      "placeholder": "admin@enyoi.onmicrosoft.com",
+      "description": "The Exchange Online (Office 365) domain name to manage. Be sure to use an .onmicrosoft.com domain for the parameter value. Otherwise, you might encounter cryptic permission issues when you run commands in the app context",
+      "required": true
+    }
+  },
+  {
     "key": "Username",
     "type": "input",
     "defaultValue": "",

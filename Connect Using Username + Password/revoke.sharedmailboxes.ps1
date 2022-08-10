@@ -18,11 +18,10 @@ $VerbosePreference = "SilentlyContinue"
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
-# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
-$AADOrganization = $c.AzureADOrganization
-$AADAppID = $c.AzureADAppId
-$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
+# Used to connect to Exchange Online using user credentials (MFA not supported).
+$Domain = $c.Domain
+$Username = $c.Username
+$Password = $c.Password
 
 # Troubleshooting
 # $aRef = @{
@@ -98,6 +97,9 @@ try {
 
         # if it does not exist create new session to exchange online in remote session     
         $createSessionResult = Invoke-Command -Session $remoteSession -ScriptBlock {
+            # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+
             # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
             $verboseLogs = [System.Collections.ArrayList]::new()
             $informationLogs = [System.Collections.ArrayList]::new()
@@ -151,16 +153,18 @@ try {
                 if ($connectedToExchange -eq $false) {
                     [Void]$verboseLogs.Add("Connecting to Exchange Online..")
     
-                    # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
+                    # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
+                    $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
+                    $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
                     $exchangeSessionParams = @{
-                        Organization          = $using:AADOrganization
-                        AppID                 = $using:AADAppID
-                        CertificateThumbPrint = $using:AADCertificateThumbprint
-                        CommandName           = $commands
-                        ShowBanner            = $false
-                        ShowProgress          = $false
-                        TrackPerformance      = $false
-                        ErrorAction           = 'Stop'
+                        Organization     = $using:Domain
+                        Credential       = $credential
+                        PSSessionOption  = $remotePSSessionOption
+                        CommandName      = $commands
+                        ShowBanner       = $false
+                        ShowProgress     = $false
+                        TrackPerformance = $false
+                        ErrorAction      = 'Stop'
                     }
                     $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
 

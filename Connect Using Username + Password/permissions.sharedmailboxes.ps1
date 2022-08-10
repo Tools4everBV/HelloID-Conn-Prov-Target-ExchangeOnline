@@ -8,6 +8,7 @@ $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
 # Used to connect to Exchange Online using user credentials (MFA not supported).
+$Domain = $c.Domain
 $Username = $c.Username
 $Password = $c.Password
 
@@ -77,12 +78,15 @@ try {
 
     # if it does not exist create new session to exchange online in remote session     
     $createSessionResult = Invoke-Command -Session $remoteSession -ScriptBlock {
+        # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+
         # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
         $verboseLogs = [System.Collections.ArrayList]::new()
         $informationLogs = [System.Collections.ArrayList]::new()
         $warningLogs = [System.Collections.ArrayList]::new()
         $errorLogs = [System.Collections.ArrayList]::new()
-            
+                
         # Import module
         $moduleName = "ExchangeOnlineManagement"
         $commands = @(
@@ -124,16 +128,17 @@ try {
                 $connectedToExchange = $false
             }
         }
-        
+            
         # Connect to Exchange
         try {
             if ($connectedToExchange -eq $false) {
                 [Void]$verboseLogs.Add("Connecting to Exchange Online..")
-
+    
                 # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
                 $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
                 $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
                 $exchangeSessionParams = @{
+                    Organization     = $using:Domain
                     Credential       = $credential
                     PSSessionOption  = $remotePSSessionOption
                     CommandName      = $commands
@@ -143,7 +148,7 @@ try {
                     ErrorAction      = 'Stop'
                 }
                 $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
-                
+
                 [Void]$informationLogs.Add("Successfully connected to Exchange Online")
             }
             else {

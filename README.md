@@ -54,8 +54,9 @@ Depending on the selected scripts, either of the following settings are required
 #### Connect Using Username + Password
 | Setting     | Description |
 | ------------ | ----------- |
+| Domain | The username of a Global Admin in Exchange Online (Office 365) |
 | Username | The username of a Global Admin in Exchange Online (Office 365) |
-| Password | The password of the Global Admin in Exchange Online (Office 365) |
+| Password | The Exchange Online (Office 365) domain name to manage. Be sure to use an .onmicrosoft.com domain for the parameter value. Otherwise, you might encounter cryptic permission issues when you run commands in the app context |
 
 #### Connect Using Certificate
 | Setting     | Description |
