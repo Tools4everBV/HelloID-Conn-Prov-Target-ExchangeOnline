@@ -32,5 +32,15 @@
       "description": "The password of the Global Admin in Exchange Online (Office 365)",
       "required": true
     }
+  },
+  {
+    "key": "isDebug",
+    "type": "checkbox",
+    "defaultValue": false,
+    "templateOptions": {
+      "label": "Toggle debug logging",
+      "description": "When toggled, debug logging will be displayed",
+      "required": false
+    }
   }
 ]
