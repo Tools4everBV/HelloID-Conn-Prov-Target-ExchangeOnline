@@ -45,7 +45,7 @@ $account = [PSCustomObject]@{
 
 # Troubleshooting
 # $account = [PSCustomObject]@{
-#     UserPrincipalName        = "a.shirwa@oktamsterdam.nl"
+#     UserPrincipalName        = "user@enyoi.nl"
 #     mailboxFolderUser        = "Default"
 #     mailboxFolderAccessRight = "LimitedDetails"
 #     mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
