@@ -1,8 +1,7 @@
-
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Create-Update-MailboxFolderPermission
 #
-# Version: 2.0.0
+# Version: 1.2.0
 #####################################################
 # Initialize default values
 $c = $configuration | ConvertFrom-Json
@@ -46,13 +45,13 @@ $account = [PSCustomObject]@{
 
 # Troubleshooting
 # $account = [PSCustomObject]@{
-#     UserPrincipalName        = "user@enyoi.onmicrosoft.com"
+#     UserPrincipalName        = "a.shirwa@oktamsterdam.nl"
 #     mailboxFolderUser        = "Default"
 #     mailboxFolderAccessRight = "LimitedDetails"
 #     mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
 # }
 
-# $dryRun = $false
+$dryRun = $false
 
 #region functions
 function Resolve-HTTPError {
@@ -78,33 +77,6 @@ function Resolve-HTTPError {
             $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
         }
         Write-Output $httpErrorObj
-    }
-}
-
-function Resolve-EXOErrorMessage {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory,
-            ValueFromPipeline
-        )]
-        [object]$ErrorObject
-    )
-    process {
-        try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
-
-            if ($null -ne $errorObjectConverted.externalMessage) {
-                $errorMessage = $errorObjectConverted.externalMessage
-            }
-            else {
-                $errorMessage = $errorObjectConverted
-            }
-        }
-        catch {
-            $errorMessage = "$($ErrorObject.Exception.Message)"
-        }
-
-        Write-Output $errorMessage
     }
 }
 
@@ -270,6 +242,10 @@ try {
                         Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                         IsError = $True
                     })
+
+                # Clean up error variables
+                Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
             }
         }
         finally {
@@ -310,6 +286,10 @@ catch {
             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
             IsError = $True
         })
+
+    # Clean up error variables
+    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
 }
 finally {
     $auditLogs = $createSessionResult.auditLogs
@@ -384,6 +364,10 @@ if ($true -eq $success) {
                         Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
                         IsError = $True
                     })
+
+                # Clean up error variables
+                Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
             }
             finally {
                 $returnobject = @{
@@ -425,6 +409,10 @@ if ($true -eq $success) {
                 Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
                 IsError = $True
             })
+
+        # Clean up error variables
+        Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+        Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
     }
     finally {
         $aRef = $getExoMailbox.aRef
@@ -484,11 +472,10 @@ if ($true -eq $success) {
                 if ($dryRun -eq $false) {
                     # See Microsoft Docs for supported params https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
                     $updateMailbox = Set-MailboxFolderPermission @mailboxSplatParams  -ErrorAction Stop
-                    [Void]$informationLogs.Add("Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
 
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "CreateAccount"
-                            Message = "Successfully updated fields of mailbox $($aRef.userPrincipalName) ($($aRef.Guid))"
+                            Message = "Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)"
                             IsError = $false
                         })
                 }
@@ -496,7 +483,7 @@ if ($true -eq $success) {
                     [Void]$warningLogs.Add("DryRun: would update mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
                 }
             }
-            catch { 
+            catch {
                 $ex = $PSItem
                 if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
                     $errorObject = Resolve-HTTPError -Error $ex
@@ -518,9 +505,13 @@ if ($true -eq $success) {
                 $success = $false
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "CreateAccount"
-                        Message = "Error updating fields of mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                        Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json). Error Message: $auditErrorMessage"
                         IsError = $True
                     })
+
+                # Clean up error variables
+                Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
             }
             finally {
                 $returnobject = @{
@@ -559,9 +550,13 @@ if ($true -eq $success) {
         $success = $false 
         $auditLogs.Add([PSCustomObject]@{
                 Action  = "CreateAccount"
-                Message = "Error updating fields of mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
                 IsError = $True
             })
+
+        # Clean up error variables
+        Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+        Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
     }
     finally {
         $aRef = $updateExoMailbox.aRef
