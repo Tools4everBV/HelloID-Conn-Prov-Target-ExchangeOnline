@@ -1,12 +1,22 @@
+#####################################################
+# HelloID-Conn-Prov-Target-ExchangeOnline-Create-CorrelateUser
+#
+# Version: 1.2.0
+#####################################################
+# Initialize default values
 $c = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
-$success = $false
-$auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
+$success = $true # Set to true at start, because only when an error occurs it is set to false
+$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-$VerbosePreference = "SilentlyContinue"
+# Set debug logging
+switch ($($c.isDebug)) {
+    $true { $VerbosePreference = 'Continue' }
+    $false { $VerbosePreference = 'SilentlyContinue' }
+}
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
@@ -15,19 +25,61 @@ $Domain = $c.Domain
 $Username = $c.Username
 $Password = $c.Password
 
+# PowerShell commands to import
+$commands = @(
+    "Get-User" # Always required
+    , "Get-Mailbox"
+    , "Get-EXOMailbox"
+    , "Set-Mailbox"
+    , "Set-MailboxFolderPermission"
+    , "Add-MailboxPermission"
+    , "Remove-MailboxPermission"
+    , "Add-RecipientPermission"
+    , "Remove-RecipientPermission"
+    , "Get-Group"
+    , "Get-DistributionGroup"
+    , "Add-DistributionGroupMember"
+    , "Remove-DistributionGroupMember"
+)
+
 # Change mapping here
 $account = [PSCustomObject]@{
     userPrincipalName = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
 }
 
-# Troubleshooting
+# # Troubleshooting
 # $account = [PSCustomObject]@{
 #     UserPrincipalName = "user@enyoi.onmicrosoft.com"
 # }
 # $dryRun = $false
 
 #region functions
-# Write functions logic here
+function Resolve-HTTPError {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory,
+            ValueFromPipeline
+        )]
+        [object]$ErrorObject
+    )
+    process {
+        $httpErrorObj = [PSCustomObject]@{
+            FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
+            MyCommand             = $ErrorObject.InvocationInfo.MyCommand
+            RequestUri            = $ErrorObject.TargetObject.RequestUri
+            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
+            ErrorMessage          = ''
+        }
+        if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') {
+            $httpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
+        }
+        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+            $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
+        }
+        Write-Output $httpErrorObj
+    }
+}
+
 function Set-PSSession {
     <#
     .SYNOPSIS
@@ -49,262 +101,383 @@ function Set-PSSession {
     [OutputType([System.Management.Automation.Runspaces.PSSession])]  
     param(       
         [Parameter(mandatory)]
-        [string]$PSSessionName
-    )
-    try {                        
-        $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
-        if ($null -eq $sessionObject) {
-            # Due to some inconsistency, the Get-PSSession does not always throw an error  
-            throw "The command cannot find a PSSession that has the name '$PSSessionName'."
-        }
-        # To Avoid using mutliple sessions at the same time.
-        if ($sessionObject.length -gt 1) {
-            remove-pssession -Id ($sessionObject.id | Sort-Object | select-object -first 1)
-            $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
-        }        
-        Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-    }
-    catch {
-        Write-Verbose "Remote Powershell session not found: $($_)"
-    }
+        [string]$PSSessionName,
 
-    if ($null -eq $sessionObject) { 
+        [Parameter()]
+        [int]$MaxSessions = 3
+    )
+
+    $sessionsTried = 0
+    do {
         try {
-            $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
-            $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionName -SessionOption $remotePSSessionOption
-            Write-Verbose "Remote Powershell session is created, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+            $sessionsTried++
+            $PSSessionNameFormatted = "$($PSSessionName)_$($sessionsTried)"
+            
+            $sessionObject = $null              
+            $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionNameFormatted -ErrorAction stop
+            if ($null -eq $sessionObject) {
+                # Due to some inconsistency, the Get-PSSession does not always throw an error  
+                throw "The command cannot find a PSSession that has the name '$PSSessionNameFormatted'."
+            }
+            # To Avoid using mutliple sessions at the same time.
+            if ($sessionObject.length -gt 1) {
+                Remove-PSSession -Id ($sessionObject.id | Sort-Object | Select-Object -first 1)
+                $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionNameFormatted -ErrorAction stop
+            }        
+            Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
         }
         catch {
-            throw "Couldn't created a PowerShell Session: $($_.Exception.Message)"
+            Write-Verbose "Remote Powershell session not found: $($_)"
         }
+
+        if ($null -eq $sessionObject) { 
+            try {
+                $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
+                $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionNameFormatted -SessionOption $remotePSSessionOption
+                Write-Verbose "Successfully created new Remote Powershell session, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+            }
+            catch {
+                throw "Could not create PowerShell Session with name '$PSSessionNameFormatted' at computer with name '$env:computername': $($_.Exception.Message)"
+            }
+        }
+    
+        Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' State: '$($sessionObject.State)' Availability: '$($sessionObject.Availability)'"
+        if ($sessionObject.Availability -eq "Busy") {
+            Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' is in Use. Trying next session, for a maximum of $MaxSessions."
+        }
+    }while ( ($null -eq $sessionObject -or $sessionObject.Availability -eq "Busy") -and $sessionsTried -lt $MaxSessions)
+
+    if ($sessionsTried -gt $MaxSessions) {
+        throw "Maximum amount of sessions '$MaxSessions' reached, Please close existing sessions before trying again."
     }
-    Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' State: '$($sessionObject.State)' Availability: '$($sessionObject.Availability)'"
-    if ($sessionObject.Availability -eq "Busy") {
-        throw "Remote session is in Use" 
-    }
+
+    Write-Information "Successfully connected to Remote Powershell session, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
     Write-Output $sessionObject
 }
 #endregion functions
 
 try {
-    if ($dryRun -eq $false) {
+    try {
         $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
         Connect-PSSession $remoteSession | out-null                                                                            
 
         # if it does not exist create new session to exchange online in remote session     
         $createSessionResult = Invoke-Command -Session $remoteSession -ScriptBlock {
-            # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+            try {
+                # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-            # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
-            $verboseLogs = [System.Collections.ArrayList]::new()
-            $informationLogs = [System.Collections.ArrayList]::new()
-            $warningLogs = [System.Collections.ArrayList]::new()
-            $errorLogs = [System.Collections.ArrayList]::new()
-                
-            # Import module
-            $moduleName = "ExchangeOnlineManagement"
-            $commands = @(
-                "Get-User",
-                "Get-DistributionGroup",
-                "Add-DistributionGroupMember",
-                "Remove-DistributionGroupMember",
-                "Get-EXOMailbox",
-                "Add-MailboxPermission",
-                "Add-RecipientPermission",
-                "Set-Mailbox",
-                "Remove-MailboxPermission",
-                "Remove-RecipientPermission"
-            )
+                $success = $using:success
+                $auditLogs = $using:auditLogs
 
-            # If module is imported say that and do nothing
-            if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
-                [Void]$verboseLogs.Add("Module $ModuleName is already imported.")
-            }
-            else {
-                # If module is not imported, but available on disk then import
-                if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                    $module = Import-Module $ModuleName -Cmdlet $commands
-                    [Void]$verboseLogs.Add("Imported module $ModuleName")
+                $dryRun = $using:dryRun
+                $account = $using:account
+
+                # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
+                $verboseLogs = [System.Collections.ArrayList]::new()
+                $informationLogs = [System.Collections.ArrayList]::new()
+                $warningLogs = [System.Collections.ArrayList]::new()
+                    
+                # Import module
+                $moduleName = "ExchangeOnlineManagement"
+                $commands = $using:commands
+
+                # If module is imported say that and do nothing
+                if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
+                    [Void]$verboseLogs.Add("Module $ModuleName is already imported.")
                 }
                 else {
-                    # If the module is not imported, not available and not in the online gallery then abort
-                    throw "Module $ModuleName not imported, not available. Please install the module using: Install-Module -Name $ModuleName -Force"
-                }
-            }
-
-            # Check if Exchange Connection already exists
-            try {
-                $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
-                $connectedToExchange = $true
-            }
-            catch {
-                if ($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*") {
-                    $connectedToExchange = $false
-                }
-            }
-            
-            # Connect to Exchange
-            try {
-                if ($connectedToExchange -eq $false) {
-                    [Void]$verboseLogs.Add("Connecting to Exchange Online..")
-    
-                    # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                    $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                    $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
-                    $exchangeSessionParams = @{
-                        Organization     = $using:Domain
-                        Credential       = $credential
-                        PSSessionOption  = $remotePSSessionOption
-                        CommandName      = $commands
-                        ShowBanner       = $false
-                        ShowProgress     = $false
-                        TrackPerformance = $false
-                        ErrorAction      = 'Stop'
+                    # If module is not imported, but available on disk then import
+                    if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
+                        $module = Import-Module $ModuleName -Cmdlet $commands
+                        [Void]$verboseLogs.Add("Imported module $ModuleName")
                     }
-                    $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
+                    else {
+                        # If the module is not imported, not available and not in the online gallery then abort
+                        throw "Module $ModuleName not imported, not available. Please install the module using: Install-Module -Name $ModuleName -Force"
+                    }
+                }
 
-                    [Void]$informationLogs.Add("Successfully connected to Exchange Online")
+                # Check if Exchange Connection already exists
+                try {
+                    $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
+                    $connectedToExchange = $true
                 }
-                else {
-                    [Void]$verboseLogs.Add("Already connected to Exchange Online")
+                catch {
+                    if ($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*") {
+                        $connectedToExchange = $false
+                    }
                 }
-            }
-            catch {
-                if (-Not [string]::IsNullOrEmpty($_.Exception.InnerExceptions)) {
-                    $errorMessage = "$($_.Exception.InnerExceptions)"
+                
+                # Connect to Exchange
+                try {
+                    if ($connectedToExchange -eq $false) {
+                        [Void]$verboseLogs.Add("Connecting to Exchange Online..")
+
+                        # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
+                        $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
+                        $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                        $exchangeSessionParams = @{
+                            Organization     = $using:Domain
+                            Credential       = $credential
+                            PSSessionOption  = $remotePSSessionOption
+                            CommandName      = $using:commands
+                            ShowBanner       = $false
+                            ShowProgress     = $false
+                            TrackPerformance = $false
+                            ErrorAction      = 'Stop'
+                        }
+
+                        $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
+                        
+                        [Void]$informationLogs.Add("Successfully connected to Exchange Online")
+                    }
+                    else {
+                        [Void]$informationLogs.Add("Successfully connected to Exchange Online (already connected)")
+                    }
                 }
-                else {
-                    $errorMessage = "$($_.Exception.Message) $($_.ScriptStackTrace)"
+                catch {
+                    $ex = $PSItem
+                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                        $errorObject = Resolve-HTTPError -Error $ex
+                
+                        $verboseErrorMessage = $errorObject.ErrorMessage
+                
+                        $auditErrorMessage = $errorObject.ErrorMessage
+                    }
+                
+                    # If error message empty, fall back on $ex.Exception.Message
+                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                        $verboseErrorMessage = $ex.Exception.Message
+                    }
+                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                        $auditErrorMessage = $ex.Exception.Message
+                    }
+
+                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+                    $success = $false 
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "CreateAccount"
+                            Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
+                            IsError = $True
+                        })
+
+                    # Clean up error variables
+                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
                 }
-                [Void]$warningLogs.Add($errorMessage)
-                [Void]$errorLogs.Add("Could not connect to Exchange Online, error: $_")
             }
             finally {
                 $returnobject = @{
+                    success         = $success
+                    auditLogs       = $auditLogs
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
                     warningLogs     = $warningLogs
-                    errorLogs       = $errorLogs
                 }
-                Remove-Variable ("verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
-                Write-Output $returnobject 
+                $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
+                Write-Output $returnobject
             }
         }
+    }
+    catch {
+        $ex = $PSItem
+        if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+            $errorObject = Resolve-HTTPError -Error $ex
 
-        # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
+            $verboseErrorMessage = $errorObject.ErrorMessage
+
+            $auditErrorMessage = $errorObject.ErrorMessage
+        }
+
+        # If error message empty, fall back on $ex.Exception.Message
+        if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+            $verboseErrorMessage = $ex.Exception.Message
+        }
+        if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+            $auditErrorMessage = $ex.Exception.Message
+        }
+
+        Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
+        $success = $false 
+        $auditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
+                Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
+                IsError = $True
+            })
+
+        # Clean up error variables
+        Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+        Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+    }
+    finally {
+        $auditLogs += $createSessionResult.auditLogs
+        $success = $createSessionResult.success
+
+        # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
         $verboseLogs = $createSessionResult.verboseLogs
         foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
         $informationLogs = $createSessionResult.informationLogs
         foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
         $warningLogs = $createSessionResult.warningLogs
         foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
-        $errorLogs = $createSessionResult.errorLogs
-        foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
-        if ($errorLogs.Count -ge 1) { throw }
+    }
 
+    if ($true -eq $success) {
+        try {
+            if ($null -eq $remoteSession) {
+                $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
+            }
+            Connect-PSSession $remoteSession | out-null
 
-        # Get Exchange Online User
-        $getExoUser = Invoke-Command -Session $remoteSession -ScriptBlock {
-            try {
-                $account = $using:account
+            # Get Exchange Online User
+            $getExoUser = Invoke-Command -Session $remoteSession -ScriptBlock {
+                try {
+                    # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                $success = $false
-                $auditLogs = [Collections.Generic.List[PSCustomObject]]::new()
+                    $success = $using:success
+                    $auditLogs = $using:auditLogs
 
-                # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
-                $verboseLogs = [System.Collections.ArrayList]::new()
-                $informationLogs = [System.Collections.ArrayList]::new()
-                $warningLogs = [System.Collections.ArrayList]::new()
-                $errorLogs = [System.Collections.ArrayList]::new()
+                    $dryRun = $using:dryRun
+                    $account = $using:account
 
-                if ([string]::IsNullOrEmpty($account.userPrincipalName)) { throw "No UserPrincipalName provided" }  
-            
-                [Void]$verboseLogs.Add("Identity: $($account.userPrincipalName)")
-                $user = Get-User -Identity $account.userPrincipalName -ErrorAction Stop
+                    # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
+                    $verboseLogs = [System.Collections.ArrayList]::new()
+                    $informationLogs = [System.Collections.ArrayList]::new()
+                    $warningLogs = [System.Collections.ArrayList]::new()
 
-                if ($user -eq $null) { throw "Failed to return a user" }
+                    [Void]$verboseLogs.Add("Querying user with UserPrincipalName '$($account.userPrincipalName)'")
 
-                $aRef = @{
-                    Guid              = $user.Guid
-                    UserPrincipalName = $user.UserPrincipalName
+                    if ([string]::IsNullOrEmpty($account.userPrincipalName)) { throw "No UserPrincipalName provided" }  
+                    
+                    $user = Get-User -Identity $account.userPrincipalName -ErrorAction Stop
+
+                    if ($null -eq $user.Guid) { throw "Failed to return a user with UserPrincipalName '$($account.userPrincipalName)'" }
+
+                    $aRef = @{
+                        Guid              = $user.Guid
+                        UserPrincipalName = $user.UserPrincipalName
+                    }
+
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "CreateAccount"
+                            Message = "Successfully queried and correlated to user $($aRef.userPrincipalName) ($($aRef.Guid))"
+                            IsError = $false
+                        })
                 }
+                catch { 
+                    $ex = $PSItem
+                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                        $errorObject = Resolve-HTTPError -Error $ex
+                    
+                        $verboseErrorMessage = $errorObject.ErrorMessage
+                    
+                        $auditErrorMessage = $errorObject.ErrorMessage
+                    }
+                    
+                    # If error message empty, fall back on $ex.Exception.Message
+                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                        $verboseErrorMessage = $ex.Exception.Message
+                    }
+                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                        $auditErrorMessage = $ex.Exception.Message
+                    }
 
-                [Void]$verboseLogs.Add("Account correlated to $($aRef.userPrincipalName) ($($aRef.Guid))")
+                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+                    $success = $false
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "CreateAccount"
+                            Message = "Error querying user with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
+                            IsError = $True
+                        })
 
-                $success = $true
-                $auditLogs.Add([PSCustomObject]@{
-                        Action  = "CreateAccount"
-                        Message = "Account correlated to $($aRef.userPrincipalName) ($($aRef.Guid))"
-                        IsError = $false
-                    })
-            }
-            catch { 
-                throw $_
-            }
-            finally {
-                $returnobject = @{
-                    user            = $user
-                    aRef            = $aRef
-                    success         = $success
-                    auditLogs       = $auditLogs
-                    verboseLogs     = $verboseLogs
-                    informationLogs = $informationLogs
-                    warningLogs     = $warningLogs
-                    errorLogs       = $errorLogs
+                    # Clean up error variables
+                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
                 }
-                Remove-Variable ("account", "user", "success", "auditLogs", "verboseLogs", "informationLogs", "warningLogs", "errorLogs")     
-                Write-Output $returnobject 
+                finally {
+                    $returnobject = @{
+                        user            = $user
+                        aRef            = $aRef
+                        success         = $success
+                        auditLogs       = $auditLogs
+                        verboseLogs     = $verboseLogs
+                        informationLogs = $informationLogs
+                        warningLogs     = $warningLogs
+                    }
+                    $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
+                    Write-Output $returnobject 
+                }
             }
+        }
+        catch {
+            $ex = $PSItem
+            if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                $errorObject = Resolve-HTTPError -Error $ex
+        
+                $verboseErrorMessage = $errorObject.ErrorMessage
+        
+                $auditErrorMessage = $errorObject.ErrorMessage
+            }
+        
+            # If error message empty, fall back on $ex.Exception.Message
+            if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                $verboseErrorMessage = $ex.Exception.Message
+            }
+            if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                $auditErrorMessage = $ex.Exception.Message
+            }
+        
+            Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
+            $success = $false 
+            $auditLogs.Add([PSCustomObject]@{
+                    Action  = "CreateAccount"
+                    Message = "Error querying user with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
+                    IsError = $True
+                })
+
+            # Clean up error variables
+            Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+            Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+        }
+        finally {
+            $aRef = $getExoUser.aRef
+            $success = $getExoUser.success
+            $auditLogs += $getExoUser.auditLogs
+            $user = $getExoUser.user
+
+            # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
+            $verboseLogs = $getExoUser.verboseLogs
+            foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
+            $informationLogs = $getExoUser.informationLogs
+            foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
+            $warningLogs = $getExoUser.warningLogs
+            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+
+            Start-Sleep 1
+            if ($null -ne $remoteSession) {           
+                Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
+                Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
+            }      
+        }
+    }
+}
+finally {
+    # Send results
+    $result = [PSCustomObject]@{
+        Success          = $success
+        AccountReference = $aRef
+        AuditLogs        = $auditLogs
+        Account          = $account
+
+        # Optionally return data for use in other systems
+        ExportData       = [PSCustomObject]@{
+            DisplayName       = $user.DisplayName
+            UserPrincipalName = $user.UserPrincipalName
+            Guid              = $user.Guid
         }
     }
 
-    $aRef = $getExoUser.aRef
-    $success = $getExoUser.success
-    $auditLogs = $getExoUser.auditLogs
-
-    # Log the data from logging arrarys (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-    $verboseLogs = $getExoUser.verboseLogs
-    foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-    $informationLogs = $getExoUser.informationLogs
-    foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-    $warningLogs = $getExoUser.warningLogs
-    foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
-    $errorLogs = $getExoUser.errorLogs
-    foreach ($errorLog in $errorLogs) { Write-Error $errorLog }
-    if ($errorLogs.Count -ge 1) { throw }
+    Write-Output $result | ConvertTo-Json -Depth 10
 }
-catch {
-    $auditLogs.Add([PSCustomObject]@{
-            Action  = "CreateAccount"
-            Message = "Account failed to correlate:  $_"
-            IsError = $True
-        })
-    $success = $false
-    Write-Warning $_
-}
-finally {
-    Start-Sleep 1
-    if ($null -ne $remoteSession) {           
-        Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
-        Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
-    }      
-}
-
-# Send results
-$user = $getExoUser.user
-$result = [PSCustomObject]@{
-    Success          = $success
-    AccountReference = $aRef
-    AuditLogs        = $auditLogs
-    Account          = $account
-
-    # Optionally return data for use in other systems
-    ExportData       = [PSCustomObject]@{
-        DisplayName       = $user.DisplayName
-        UserPrincipalName = $user.UserPrincipalName
-        Guid              = $user.Guid
-    }
-}
-
-Write-Output $result | ConvertTo-Json -Depth 10
