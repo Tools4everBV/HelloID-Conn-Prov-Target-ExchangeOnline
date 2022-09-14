@@ -12,15 +12,13 @@ $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-$VerbosePreference = "SilentlyContinue"
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # Set debug logging
 switch ($($c.isDebug)) {
     $true { $VerbosePreference = 'Continue' }
     $false { $VerbosePreference = 'SilentlyContinue' }
 }
+$InformationPreference = "Continue"
+$WarningPreference = "Continue"
 
 # Used to connect to Exchange Online using user credentials (MFA not supported).
 $Domain = $c.Domain
@@ -42,6 +40,7 @@ $commands = @(
     , "Get-DistributionGroup"
     , "Add-DistributionGroupMember"
     , "Remove-DistributionGroupMember"
+    , "Set-MailboxRegionalConfiguration"
 )
 
 # Change mapping here
@@ -103,65 +102,50 @@ function Set-PSSession {
     [OutputType([System.Management.Automation.Runspaces.PSSession])]  
     param(       
         [Parameter(mandatory)]
-        [string]$PSSessionName,
-
-        [Parameter()]
-        [int]$MaxSessions = 3
+        [string]$PSSessionName
     )
-
-    $sessionsTried = 0
-    do {
-        try {
-            $sessionsTried++
-            $PSSessionNameFormatted = "$($PSSessionName)_$($sessionsTried)"
-            
-            $sessionObject = $null              
-            $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionNameFormatted -ErrorAction stop
-            if ($null -eq $sessionObject) {
-                # Due to some inconsistency, the Get-PSSession does not always throw an error  
-                throw "The command cannot find a PSSession that has the name '$PSSessionNameFormatted'."
-            }
-            # To Avoid using mutliple sessions at the same time.
-            if ($sessionObject.length -gt 1) {
-                Remove-PSSession -Id ($sessionObject.id | Sort-Object | Select-Object -first 1)
-                $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionNameFormatted -ErrorAction stop
-            }        
-            Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+    try {       
+        $sessionObject = $null              
+        $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
+        if ($null -eq $sessionObject) {
+            # Due to some inconsistency, the Get-PSSession does not always throw an error  
+            throw "The command cannot find a PSSession that has the name '$PSSessionName'."
         }
-        catch {
-            Write-Verbose "Remote Powershell session not found: $($_)"
-        }
-
-        if ($null -eq $sessionObject) { 
-            try {
-                $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
-                $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionNameFormatted -SessionOption $remotePSSessionOption
-                Write-Verbose "Successfully created new Remote Powershell session, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-            }
-            catch {
-                throw "Could not create PowerShell Session with name '$PSSessionNameFormatted' at computer with name '$env:computername': $($_.Exception.Message)"
-            }
-        }
-    
-        Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' State: '$($sessionObject.State)' Availability: '$($sessionObject.Availability)'"
-        if ($sessionObject.Availability -eq "Busy") {
-            Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' is in Use. Trying next session, for a maximum of $MaxSessions."
-        }
-    }while ( ($null -eq $sessionObject -or $sessionObject.Availability -eq "Busy") -and $sessionsTried -lt $MaxSessions)
-
-    if ($sessionsTried -gt $MaxSessions) {
-        throw "Maximum amount of sessions '$MaxSessions' reached, Please close existing sessions before trying again."
+        # To Avoid using mutliple sessions at the same time.
+        if ($sessionObject.length -gt 1) {
+            Remove-PSSession -Id ($sessionObject.id | Sort-Object | Select-Object -first 1)
+            $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
+        }        
+        Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+    }
+    catch {
+        Write-Verbose "Remote Powershell session not found: $($_)"
     }
 
-    Write-Information "Successfully connected to Remote Powershell session, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+    if ($null -eq $sessionObject) { 
+        try {
+            $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
+            $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionName -SessionOption $remotePSSessionOption
+            Write-Verbose "Successfully created new Remote Powershell session, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+        }
+        catch {
+            throw "Could not create PowerShell Session with name '$PSSessionName' at computer with name '$env:computername': $($_.Exception.Message)"
+        }
+    }
+
+    Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' State: '$($sessionObject.State)' Availability: '$($sessionObject.Availability)'"
+    if ($sessionObject.Availability -eq "Busy") {
+        throw "Remote Powershell Session '$($sessionObject.Name)' is in Use"
+    }
+
     Write-Output $sessionObject
 }
 #endregion functions
 try {
-    try {
-        $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
-        Connect-PSSession $remoteSession | out-null                                                                            
+    $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_CRUD'
+    Connect-PSSession $remoteSession | out-null
 
+    try {
         # if it does not exist create new session to exchange online in remote session     
         $createSessionResult = Invoke-Command -Session $remoteSession -ScriptBlock {
             try {
@@ -169,10 +153,9 @@ try {
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
                 $success = $using:success
-                $auditLogs = $using:auditLogs
+                $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                 $dryRun = $using:dryRun
-                $account = $using:account
 
                 # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
                 $verboseLogs = [System.Collections.ArrayList]::new()
@@ -326,9 +309,6 @@ try {
 
     if ($true -eq $success) {
         try {
-            $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
-            Connect-PSSession $remoteSession | out-null
-
             # Get Exchange Online Mailbox
             $getExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
                 try {
@@ -336,7 +316,7 @@ try {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
                     $success = $using:success
-                    $auditLogs = $using:auditLogs
+                    $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                     $dryRun = $using:dryRun
                     $account = $using:account
@@ -453,20 +433,11 @@ try {
             foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
             $warningLogs = $getExoMailbox.warningLogs
             foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
-
-            Start-Sleep 1
-            if ($null -ne $remoteSession) {           
-                Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
-                Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
-            }      
         }
     }
 
     if ($true -eq $success) {
         try {
-            $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online'
-            Connect-PSSession $remoteSession | out-null
-
             # Update Exchange Online Mailbox
             $updateExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
                 try {
@@ -474,7 +445,7 @@ try {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
                     $success = $using:success
-                    $auditLogs = $using:auditLogs
+                    $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                     $dryRun = $using:dryRun
                     $aRef = $using:aRef
@@ -497,7 +468,7 @@ try {
 
                     if ($dryRun -eq $false) {
                         # See Microsoft Docs for supported params https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
-                        $updateMailbox = Set-MailboxFolderPermission @mailboxSplatParams  -ErrorAction Stop
+                        $updateMailbox = Set-MailboxFolderPermission @mailboxSplatParams -ErrorAction Stop
 
                         $auditLogs.Add([PSCustomObject]@{
                                 Action  = "CreateAccount"
@@ -596,13 +567,14 @@ try {
             foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
             $warningLogs = $updateExoMailbox.warningLogs
             foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
-
-            Start-Sleep 1
-            if ($null -ne $remoteSession) {           
-                Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null   # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
-                Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
-            }      
         }
+    }
+}
+finally {
+    Start-Sleep 1
+    if ($null -ne $remoteSession) {
+        Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
+        Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
     }
 
     # Send results

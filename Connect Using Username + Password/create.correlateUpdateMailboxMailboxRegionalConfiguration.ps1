@@ -1,18 +1,11 @@
 #####################################################
-# HelloID-Conn-Prov-Target-ExchangeOnline-RevokePermission-Group
+# HelloID-Conn-Prov-Target-ExchangeOnline-Create-Update-MailboxRegionalConfiguration
 #
 # Version: 1.2.0
 #####################################################
-#region Initialize default properties
+# Initialize default values
 $c = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
-$m = $manager | ConvertFrom-Json
-$aRef = $accountReference | ConvertFrom-Json
-$mRef = $managerAccountReference | ConvertFrom-Json
-
-# The permissionReference object contains the Identification object provided in the retrieve permissions call
-$pRef = $permissionReference | ConvertFrom-Json
-
 $success = $true # Set to true at start, because only when an error occurs it is set to false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -50,10 +43,24 @@ $commands = @(
     , "Set-MailboxRegionalConfiguration"
 )
 
+# Change mapping here
+$account = [PSCustomObject]@{
+    userPrincipalName         = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
+    language                  = 'nl-NL'
+    dateFormat                = 'dd-MM-yy'
+    timeFormat                = "H:mm" 
+    timeZone                  = "W. Europe Standard Time" 
+    localizeDefaultFolderName = $true
+}
+
 # Troubleshooting
-# $aRef = @{
-#     Guid = "ae71715a-2964-4ce6-844a-b684d61aa1e5"
-#     UserPrincipalName = "user@enyoi.onmicrosoft.com"
+# $account = [PSCustomObject]@{
+#     UserPrincipalName         = "user@enyoi.onmicrosoft.com"
+#     language                  = 'nl-NL'
+#     dateFormat                = 'dd-MM-yy'
+#     timeFormat                = "H:mm" 
+#     timeZone                  = "W. Europe Standard Time" 
+#     localizeDefaultFolderName = $true
 # }
 # $dryRun = $false
 
@@ -144,9 +151,8 @@ function Set-PSSession {
     Write-Output $sessionObject
 }
 #endregion functions
-
 try {
-    $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_PermissionsGrantRevoke'
+    $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_CRUD'
     Connect-PSSession $remoteSession | out-null
 
     try {
@@ -245,7 +251,7 @@ try {
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     $success = $false 
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
+                            Action  = "CreateAccount"
                             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                             IsError = $True
                         })
@@ -289,7 +295,7 @@ try {
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
         $success = $false 
         $auditLogs.Add([PSCustomObject]@{
-                Action  = "RevokePermission"
+                Action  = "CreateAccount"
                 Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                 IsError = $True
             })
@@ -313,8 +319,8 @@ try {
 
     if ($true -eq $success) {
         try {
-            # Revoke Exchange Online Groupmembership
-            $removeExoGroupMembership = Invoke-Command -Session $remoteSession -ScriptBlock {
+            # Get Exchange Online Mailbox
+            $getExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
                 try {
                     # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
@@ -323,37 +329,33 @@ try {
                     $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                     $dryRun = $using:dryRun
-                    $aRef = $using:aRef
-                    $pRef = $using:pRef
+                    $account = $using:account
 
                     # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
                     $verboseLogs = [System.Collections.ArrayList]::new()
                     $informationLogs = [System.Collections.ArrayList]::new()
                     $warningLogs = [System.Collections.ArrayList]::new()
 
-                    # Set mailbox folder permission
-                    $dgSplatParams = @{
-                        Identity                        = $pRef.id
-                        Member                          = $aRef.Guid
-                        BypassSecurityGroupManagerCheck = $true
-                    } 
+                    [Void]$verboseLogs.Add("Querying mailbox with UserPrincipalName '$($account.userPrincipalName)'")
 
-                    [Void]$verboseLogs.Add("Revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                    if ([string]::IsNullOrEmpty($account.userPrincipalName)) { throw "No UserPrincipalName provided" }  
+                    
+                    $mailbox = Get-EXOMailbox -Identity $account.userPrincipalName -ErrorAction Stop
 
-                    if ($dryRun -eq $false) {
-                        $removeDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+                    if ($null -eq $mailbox.Guid) { throw "Failed to return a mailbox with UserPrincipalName '$($account.userPrincipalName)'" }
 
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                                IsError = $false
-                            })
+                    $aRef = @{
+                        Guid              = $mailbox.Guid
+                        UserPrincipalName = $mailbox.UserPrincipalName
                     }
-                    else {
-                        [Void]$warningLogs.Add("DryRun: would revoke permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))")
-                    }
+
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "CreateAccount"
+                            Message = "Successfully queried and correlated to mailbox $($aRef.userPrincipalName) ($($aRef.Guid))"
+                            IsError = $false
+                        })
                 }
-                catch {
+                catch { 
                     $ex = $PSItem
                     if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
                         $errorObject = Resolve-HTTPError -Error $ex
@@ -372,39 +374,12 @@ try {
                     }
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-
-                    if ($auditErrorMessage -like "*isn't a member of the group*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Already no longer a member of the group)"
-                                IsError = $false
-                            }
-                        )
-                    }
-                    elseif ($auditErrorMessage -like "*object '$($pRef.id)' couldn't be found*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Group $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action)"
-                                IsError = $false
-                            }
-                        )
-                    }
-                    elseif ($auditErrorMessage -like "*Couldn't find object ""$($aRef.Guid)""*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action)"
-                                IsError = $false
-                            }
-                        )
-                    }
-                    else {
-                        $success = $false
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Error revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
-                                IsError = $True
-                            })
-                    }
+                    $success = $false
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "CreateAccount"
+                            Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
+                            IsError = $True
+                        })
 
                     # Clean up error variables
                     Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
@@ -412,6 +387,8 @@ try {
                 }
                 finally {
                     $returnobject = @{
+                        mailbox         = $mailbox
+                        aRef            = $aRef
                         success         = $success
                         auditLogs       = $auditLogs
                         verboseLogs     = $verboseLogs
@@ -442,11 +419,10 @@ try {
             }
         
             Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-
             $success = $false 
             $auditLogs.Add([PSCustomObject]@{
-                    Action  = "RevokePermission"
-                    Message = "Error revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                    Action  = "CreateAccount"
+                    Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
                     IsError = $True
                 })
 
@@ -455,16 +431,154 @@ try {
             Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
         }
         finally {
-            $success = $removeExoGroupMembership.success
-            $auditLogs += $removeExoGroupMembership.auditLogs
+            $aRef = $getExoMailbox.aRef
+            $success = $getExoMailbox.success
+            $auditLogs += $getExoMailbox.auditLogs
+            $mailbox = $getExoMailbox.mailbox
 
             # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-            $verboseLogs = $removeExoGroupMembership.verboseLogs
+            $verboseLogs = $getExoMailbox.verboseLogs
             foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-            $informationLogs = $removeExoGroupMembership.informationLogs
+            $informationLogs = $getExoMailbox.informationLogs
             foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-            $warningLogs = $removeExoGroupMembership.warningLogs
-            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }     
+            $warningLogs = $getExoMailbox.warningLogs
+            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+        }
+    }
+
+    if ($true -eq $success) {
+        try {
+            # Update Exchange Online Mailbox
+            $updateExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
+                try {
+                    # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+
+                    $success = $using:success
+                    $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+                    $dryRun = $using:dryRun
+                    $aRef = $using:aRef
+                    $account = $using:account
+                    $mailbox = $using:mailbox
+
+                    # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
+                    $verboseLogs = [System.Collections.ArrayList]::new()
+                    $informationLogs = [System.Collections.ArrayList]::new()
+                    $warningLogs = [System.Collections.ArrayList]::new()
+
+                    # Set Mailbox to dutch
+                    $mailboxSplatParams = @{
+                        Identity                  = $($mailbox.Guid)
+                        Language                  = $($account.language)
+                        DateFormat                = $($account.dateFormat)
+                        TimeFormat                = $($account.timeFormat)
+                        TimeZone                  = $($account.timeZone)
+                        LocalizeDefaultFolderName = $($account.localizeDefaultFolderName)
+                    }
+
+                    [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
+
+                    if ($dryRun -eq $false) {
+                        $updateMailbox = Set-MailboxRegionalConfiguration @mailboxSplatParams -ErrorAction Stop
+
+                        $auditLogs.Add([PSCustomObject]@{
+                                Action  = "CreateAccount"
+                                Message = "Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)"
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        [Void]$warningLogs.Add("DryRun: would update mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
+                    }
+                }
+                catch {
+                    $ex = $PSItem
+                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                        $errorObject = Resolve-HTTPError -Error $ex
+                    
+                        $verboseErrorMessage = $errorObject.ErrorMessage
+                    
+                        $auditErrorMessage = $errorObject.ErrorMessage
+                    }
+                    
+                    # If error message empty, fall back on $ex.Exception.Message
+                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                        $verboseErrorMessage = $ex.Exception.Message
+                    }
+                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                        $auditErrorMessage = $ex.Exception.Message
+                    }
+
+                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+                    $success = $false
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "CreateAccount"
+                            Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json). Error Message: $auditErrorMessage"
+                            IsError = $True
+                        })
+
+                    # Clean up error variables
+                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+                }
+                finally {
+                    $returnobject = @{
+                        mailbox         = $mailbox
+                        aRef            = $aRef
+                        success         = $success
+                        auditLogs       = $auditLogs
+                        verboseLogs     = $verboseLogs
+                        informationLogs = $informationLogs
+                        warningLogs     = $warningLogs
+                    }
+                    $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
+                    Write-Output $returnobject 
+                }
+            }
+        }
+        catch {
+            $ex = $PSItem
+            if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                $errorObject = Resolve-HTTPError -Error $ex
+        
+                $verboseErrorMessage = $errorObject.ErrorMessage
+        
+                $auditErrorMessage = $errorObject.ErrorMessage
+            }
+        
+            # If error message empty, fall back on $ex.Exception.Message
+            if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                $verboseErrorMessage = $ex.Exception.Message
+            }
+            if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                $auditErrorMessage = $ex.Exception.Message
+            }
+        
+            Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
+            $success = $false 
+            $auditLogs.Add([PSCustomObject]@{
+                    Action  = "CreateAccount"
+                    Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                    IsError = $True
+                })
+
+            # Clean up error variables
+            Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+            Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+        }
+        finally {
+            $aRef = $updateExoMailbox.aRef
+            $success = $updateExoMailbox.success
+            $auditLogs += $updateExoMailbox.auditLogs
+
+            # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
+            $verboseLogs = $updateExoMailbox.verboseLogs
+            foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
+            $informationLogs = $updateExoMailbox.informationLogs
+            foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
+            $warningLogs = $updateExoMailbox.warningLogs
+            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
         }
     }
 }
@@ -477,8 +591,17 @@ finally {
 
     # Send results
     $result = [PSCustomObject]@{
-        Success   = $success
-        AuditLogs = $auditLogs
+        Success          = $success
+        AccountReference = $aRef
+        AuditLogs        = $auditLogs
+        Account          = $account
+
+        # Optionally return data for use in other systems
+        ExportData       = [PSCustomObject]@{
+            DisplayName       = $mailbox.DisplayName
+            UserPrincipalName = $mailbox.UserPrincipalName
+            Guid              = $mailbox.Guid
+        }
     }
 
     Write-Output $result | ConvertTo-Json -Depth 10
