@@ -52,7 +52,7 @@ The following settings are required to connect.
 | Setting     | Description |
 | ------------ | ----------- |
 | Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists __Please note: This has to be the .onmicrosoft domain name__ |
-| Azure AD App Id | The App ID of the Azure AD App Registration with Exchange Permissions. __Please follow the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps) as reference to configure the App Registration correctly__  |
+| Azure AD App Id | The App ID of the Azure AD App Registration with Exchange Permissions. __Please follow the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#:~:text=in%20the%20token.-,Set%20up%20app%2Donly%20authentication,-An%20initial%20onboarding) as reference to configure the App Registration correctly__  |
 | Azure AD Certificate Thumbprint | The thumbprint of the certificate that is linked to the zure AD App Registration __Please note: This certificate has to be locally installed__|
 
 ## Getting help
