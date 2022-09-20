@@ -1,10 +1,20 @@
 #####################################################
-# HelloID-Conn-Prov-Target-ExchangeOnline-Permissions-Groups
+# HelloID-Conn-Prov-Target-ExchangeOnline-GrantPermission-Group
 #
 # Version: 1.2.0
 #####################################################
 #region Initialize default properties
 $c = $configuration | ConvertFrom-Json
+$p = $person | ConvertFrom-Json
+$m = $manager | ConvertFrom-Json
+$aRef = $accountReference | ConvertFrom-Json
+$mRef = $managerAccountReference | ConvertFrom-Json
+
+# The permissionReference object contains the Identification object provided in the retrieve permissions call
+$pRef = $permissionReference | ConvertFrom-Json
+
+$success = $true # Set to true at start, because only when an error occurs it is set to false
+$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
@@ -17,10 +27,11 @@ switch ($($c.isDebug)) {
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Domain = $c.Domain
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # PowerShell commands to import
 $commands = @(
@@ -39,6 +50,13 @@ $commands = @(
     , "Remove-DistributionGroupMember"
     , "Set-MailboxRegionalConfiguration"
 )
+
+# Troubleshooting
+# $aRef = @{
+#     Guid = "ae71715a-2964-4ce6-844a-b684d61aa1e5"
+#     UserPrincipalName = "user@enyoi.onmicrosoft.com"
+# }
+# $dryRun = $false
 
 #region functions
 function Resolve-HTTPError {
@@ -129,8 +147,8 @@ function Set-PSSession {
 #endregion functions
 
 try {
-    $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_PermissionsRetrieve'
-    Connect-PSSession $remoteSession | out-null
+    $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_PermissionsGrantRevoke'
+    Connect-PSSession $remoteSession | out-null  
 
     try {
         # if it does not exist create new session to exchange online in remote session     
@@ -138,6 +156,11 @@ try {
             try {
                 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+
+                $success = $using:success
+                $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+                $dryRun = $using:dryRun
 
                 # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
                 $verboseLogs = [System.Collections.ArrayList]::new()
@@ -180,20 +203,17 @@ try {
                     if ($connectedToExchange -eq $false) {
                         [Void]$verboseLogs.Add("Connecting to Exchange Online..")
 
-                        # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                        $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                        $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                        # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                         $exchangeSessionParams = @{
-                            Organization     = $using:Domain
-                            Credential       = $credential
-                            PSSessionOption  = $remotePSSessionOption
-                            CommandName      = $using:commands
-                            ShowBanner       = $false
-                            ShowProgress     = $false
-                            TrackPerformance = $false
-                            ErrorAction      = 'Stop'
+                            Organization          = $using:AADOrganization
+                            AppID                 = $using:AADAppID
+                            CertificateThumbPrint = $using:AADCertificateThumbprint
+                            CommandName           = $commands
+                            ShowBanner            = $false
+                            ShowProgress          = $false
+                            TrackPerformance      = $false
+                            ErrorAction           = 'Stop'
                         }
-
                         $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
                         
                         [Void]$informationLogs.Add("Successfully connected to Exchange Online")
@@ -223,7 +243,7 @@ try {
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     $success = $false 
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
+                            Action  = "GrantPermission"
                             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                             IsError = $True
                         })
@@ -267,7 +287,7 @@ try {
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
         $success = $false 
         $auditLogs.Add([PSCustomObject]@{
-                Action  = "RevokePermission"
+                Action  = "GrantPermission"
                 Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                 IsError = $True
             })
@@ -277,6 +297,9 @@ try {
         Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
     }
     finally {
+        $auditLogs += $createSessionResult.auditLogs
+        $success = $createSessionResult.success
+
         # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
         $verboseLogs = $createSessionResult.verboseLogs
         foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
@@ -286,109 +309,145 @@ try {
         foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     }
 
-    try {
-        # Get Exchange Online Groups
-        $getExoGroups = Invoke-Command -Session $remoteSession -ScriptBlock {
-            try {
-                # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+    if ($true -eq $success) {
+        try {
+            # Grant Exchange Online Groupmembership
+            $addExoGroupMembership = Invoke-Command -Session $remoteSession -ScriptBlock {
+                try {
+                    # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
-                $verboseLogs = [System.Collections.ArrayList]::new()
-                $informationLogs = [System.Collections.ArrayList]::new()
-                $warningLogs = [System.Collections.ArrayList]::new()
+                    $success = $using:success
+                    $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-                [Void]$verboseLogs.Add("Querying groups")
-                
-                # Only get Exchange Groups (Mail-enabled Security Group of Distribution Group)
-                # Do not get all groups using "Get-Group", since we cannot manage Microsoft 365 or Security Groups (they have to be managed from Azure AD) 
-                # Filter Cloud-Only groups (IsDirSynced -eq 'False')
-                $groups = Get-DistributionGroup -Filter "IsDirSynced -eq 'False'" -ResultSize Unlimited
+                    $dryRun = $using:dryRun
+                    $aRef = $using:aRef
+                    $pRef = $using:pRef
 
-                [Void]$informationLogs.Add("Successfully queried Groups. Result count: $($groups.id.Count)")
+                    # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
+                    $verboseLogs = [System.Collections.ArrayList]::new()
+                    $informationLogs = [System.Collections.ArrayList]::new()
+                    $warningLogs = [System.Collections.ArrayList]::new()
+
+                    # Set mailbox folder permission
+                    $dgSplatParams = @{
+                        Identity                        = $pRef.id
+                        Member                          = $aRef.Guid
+                        BypassSecurityGroupManagerCheck = $true
+                    } 
+
+                    [Void]$verboseLogs.Add("Granting permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                    if ($dryRun -eq $false) {
+                        $addDGMember = Add-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+
+                        $auditLogs.Add([PSCustomObject]@{
+                                Action  = "GrantPermission"
+                                Message = "Successfully granted permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        [Void]$warningLogs.Add("DryRun: would grant permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                    }
+                }
+                catch {
+                    $ex = $PSItem
+                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                        $errorObject = Resolve-HTTPError -Error $ex
+                    
+                        $verboseErrorMessage = $errorObject.ErrorMessage
+                    
+                        $auditErrorMessage = $errorObject.ErrorMessage
+                    }
+                    
+                    # If error message empty, fall back on $ex.Exception.Message
+                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                        $verboseErrorMessage = $ex.Exception.Message
+                    }
+                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                        $auditErrorMessage = $ex.Exception.Message
+                    }
+
+                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+
+                    if ($auditErrorMessage -like "*already a member of the group*") {
+                        $auditLogs.Add([PSCustomObject]@{
+                                Action  = "GrantPermission"
+                                Message = "Successfully granted permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Already a member of the group)"
+                                IsError = $false
+                            }
+                        )
+                    }
+                    else {
+                        $success = $false
+                        $auditLogs.Add([PSCustomObject]@{
+                                Action  = "GrantPermission"
+                                Message = "Error granting permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                                IsError = $True
+                            })
+                    }
+
+                    # Clean up error variables
+                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+                }
+                finally {
+                    $returnobject = @{
+                        success         = $success
+                        auditLogs       = $auditLogs
+                        verboseLogs     = $verboseLogs
+                        informationLogs = $informationLogs
+                        warningLogs     = $warningLogs
+                    }
+                    $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
+                    Write-Output $returnobject 
+                }
             }
-            catch { 
-                $ex = $PSItem
-                if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                    $errorObject = Resolve-HTTPError -Error $ex
-                
-                    $verboseErrorMessage = $errorObject.ErrorMessage
-                
-                    $auditErrorMessage = $errorObject.ErrorMessage
-                }
-                
-                # If error message empty, fall back on $ex.Exception.Message
-                if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-                    $verboseErrorMessage = $ex.Exception.Message
-                }
-                if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-                    $auditErrorMessage = $ex.Exception.Message
-                }
-
-                [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                $success = $false
-                $auditLogs.Add([PSCustomObject]@{
-                        Action  = "CreateAccount"
-                        Message = "Error querying groups. Error Message: $auditErrorMessage"
-                        IsError = $True
-                    })
-
-                # Clean up error variables
-                Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-                Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+        }
+        catch {
+            $ex = $PSItem
+            if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                $errorObject = Resolve-HTTPError -Error $ex
+        
+                $verboseErrorMessage = $errorObject.ErrorMessage
+        
+                $auditErrorMessage = $errorObject.ErrorMessage
             }
-            finally {
-                $returnobject = @{
-                    groups          = $groups
-                    verboseLogs     = $verboseLogs
-                    informationLogs = $informationLogs
-                    warningLogs     = $warningLogs
-                }
-                $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
-                Write-Output $returnobject 
+        
+            # If error message empty, fall back on $ex.Exception.Message
+            if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                $verboseErrorMessage = $ex.Exception.Message
             }
+            if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                $auditErrorMessage = $ex.Exception.Message
+            }
+        
+            Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
+
+            $success = $false 
+            $auditLogs.Add([PSCustomObject]@{
+                    Action  = "GrantPermission"
+                    Message = "Error granting permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                    IsError = $True
+                })
+
+            # Clean up error variables
+            Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+            Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
         }
-    }
-    catch {
-        $ex = $PSItem
-        if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $errorObject = Resolve-HTTPError -Error $ex
+        finally {
+            $success = $addExoGroupMembership.success
+            $auditLogs += $addExoGroupMembership.auditLogs
 
-            $verboseErrorMessage = $errorObject.ErrorMessage
-
-            $auditErrorMessage = $errorObject.ErrorMessage
+            # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
+            $verboseLogs = $addExoGroupMembership.verboseLogs
+            foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
+            $informationLogs = $addExoGroupMembership.informationLogs
+            foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
+            $warningLogs = $addExoGroupMembership.warningLogs
+            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
         }
-
-        # If error message empty, fall back on $ex.Exception.Message
-        if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-            $verboseErrorMessage = $ex.Exception.Message
-        }
-        if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-            $auditErrorMessage = $ex.Exception.Message
-        }
-
-        Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-        $success = $false 
-        $auditLogs.Add([PSCustomObject]@{
-                Action  = "CreateAccount"
-                Message = "Error querying user with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
-                IsError = $True
-            })
-
-        # Clean up error variables
-        Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-        Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
-    }
-    finally {
-        $groups = $getExoGroups.groups
-
-        # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-        $verboseLogs = $getExoGroups.verboseLogs
-        foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-        $informationLogs = $getExoGroups.informationLogs
-        foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-        $warningLogs = $getExoGroups.warningLogs
-        foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     }
 }
 finally {
@@ -399,24 +458,10 @@ finally {
     }
 
     # Send results
-    foreach ($group in $groups) {
-        switch ($group.RecipientType) {
-            "MailUniversalSecurityGroup" {
-                $groupType = "Mail-enabled Security Group"
-            }
-            "MailUniversalDistributionGroup" {
-                $groupType = "Distribution Group"
-            }
-        }
-        
-        $permission = @{
-            DisplayName    = "$($groupType) - $($group.DisplayName)"
-            Identification = @{
-                Id   = $group.Guid
-                Name = $group.DisplayName
-            }
-        }
-
-        Write-output $permission | ConvertTo-Json -Depth 10    
+    $result = [PSCustomObject]@{
+        Success   = $success
+        AuditLogs = $auditLogs
     }
+
+    Write-Output $result | ConvertTo-Json -Depth 10
 }

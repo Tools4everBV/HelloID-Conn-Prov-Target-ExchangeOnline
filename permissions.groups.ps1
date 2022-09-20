@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-ExchangeOnline-Permissions-SharedMailboxes
+# HelloID-Conn-Prov-Target-ExchangeOnline-Permissions-Groups
 #
 # Version: 1.2.0
 #####################################################
@@ -17,10 +17,11 @@ switch ($($c.isDebug)) {
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Domain = $c.Domain
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # PowerShell commands to import
 $commands = @(
@@ -132,7 +133,7 @@ try {
     $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_PermissionsRetrieve'
     Connect-PSSession $remoteSession | out-null
 
-    try {                                                                    
+    try {
         # if it does not exist create new session to exchange online in remote session     
         $createSessionResult = Invoke-Command -Session $remoteSession -ScriptBlock {
             try {
@@ -180,20 +181,17 @@ try {
                     if ($connectedToExchange -eq $false) {
                         [Void]$verboseLogs.Add("Connecting to Exchange Online..")
 
-                        # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                        $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                        $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                        # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                         $exchangeSessionParams = @{
-                            Organization     = $using:Domain
-                            Credential       = $credential
-                            PSSessionOption  = $remotePSSessionOption
-                            CommandName      = $using:commands
-                            ShowBanner       = $false
-                            ShowProgress     = $false
-                            TrackPerformance = $false
-                            ErrorAction      = 'Stop'
+                            Organization          = $using:AADOrganization
+                            AppID                 = $using:AADAppID
+                            CertificateThumbPrint = $using:AADCertificateThumbprint
+                            CommandName           = $commands
+                            ShowBanner            = $false
+                            ShowProgress          = $false
+                            TrackPerformance      = $false
+                            ErrorAction           = 'Stop'
                         }
-
                         $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
                         
                         [Void]$informationLogs.Add("Successfully connected to Exchange Online")
@@ -287,8 +285,8 @@ try {
     }
 
     try {
-        # Get Exchange Online Shared Mailboxes
-        $getExoMailboxes = Invoke-Command -Session $remoteSession -ScriptBlock {
+        # Get Exchange Online Groups
+        $getExoGroups = Invoke-Command -Session $remoteSession -ScriptBlock {
             try {
                 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
@@ -298,12 +296,14 @@ try {
                 $informationLogs = [System.Collections.ArrayList]::new()
                 $warningLogs = [System.Collections.ArrayList]::new()
 
-                [Void]$verboseLogs.Add("Querying Shared Mailboxes")
+                [Void]$verboseLogs.Add("Querying groups")
                 
-                # Only get Exchange Shared Mailboxes (can be changed easily to get all mailboxes)
-                $mailboxes = Get-EXOMailbox -RecipientTypeDetails SharedMailbox -resultSize unlimited
+                # Only get Exchange Groups (Mail-enabled Security Group of Distribution Group)
+                # Do not get all groups using "Get-Group", since we cannot manage Microsoft 365 or Security Groups (they have to be managed from Azure AD) 
+                # Filter Cloud-Only groups (IsDirSynced -eq 'False')
+                $groups = Get-DistributionGroup -Filter "IsDirSynced -eq 'False'" -ResultSize Unlimited
 
-                [Void]$informationLogs.Add("Successfully queried Shared Mailboxes. Result count: $($mailboxes.id.Count)")
+                [Void]$informationLogs.Add("Successfully queried Groups. Result count: $($groups.id.Count)")
             }
             catch { 
                 $ex = $PSItem
@@ -327,7 +327,7 @@ try {
                 $success = $false
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "CreateAccount"
-                        Message = "Error querying Shared Mailboxes. Error Message: $auditErrorMessage"
+                        Message = "Error querying groups. Error Message: $auditErrorMessage"
                         IsError = $True
                     })
 
@@ -337,7 +337,7 @@ try {
             }
             finally {
                 $returnobject = @{
-                    mailboxes       = $mailboxes
+                    groups          = $groups
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
                     warningLogs     = $warningLogs
@@ -378,15 +378,15 @@ try {
         Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
     }
     finally {
-        $mailboxes = $getExoMailboxes.mailboxes
+        $groups = $getExoGroups.groups
 
         # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-        $verboseLogs = $getExoMailboxes.verboseLogs
+        $verboseLogs = $getExoGroups.verboseLogs
         foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-        $informationLogs = $getExoMailboxes.informationLogs
+        $informationLogs = $getExoGroups.informationLogs
         foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-        $warningLogs = $getExoMailboxes.warningLogs
-        foreach ($warningLog in $warningLogs) { Write-Warning $warningLog } 
+        $warningLogs = $getExoGroups.warningLogs
+        foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     }
 }
 finally {
@@ -397,13 +397,21 @@ finally {
     }
 
     # Send results
-    foreach ($mailbox in $mailboxes) {
+    foreach ($group in $groups) {
+        switch ($group.RecipientType) {
+            "MailUniversalSecurityGroup" {
+                $groupType = "Mail-enabled Security Group"
+            }
+            "MailUniversalDistributionGroup" {
+                $groupType = "Distribution Group"
+            }
+        }
+        
         $permission = @{
-            DisplayName    = "Shared Mailbox - $($mailbox.DisplayName)"
+            DisplayName    = "$($groupType) - $($group.DisplayName)"
             Identification = @{
-                Id          = $mailbox.Guid
-                Name        = $mailbox.DisplayName
-                Permissions = @("Full Access", "Send As") # Options:  Full Access,Send As, Send on Behalf
+                Id   = $group.Guid
+                Name = $group.DisplayName
             }
         }
 

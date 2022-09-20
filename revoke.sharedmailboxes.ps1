@@ -27,10 +27,11 @@ switch ($($c.isDebug)) {
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Domain = $c.Domain
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # PowerShell commands to import
 $commands = @(
@@ -202,20 +203,17 @@ try {
                     if ($connectedToExchange -eq $false) {
                         [Void]$verboseLogs.Add("Connecting to Exchange Online..")
 
-                        # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                        $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                        $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                        # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                         $exchangeSessionParams = @{
-                            Organization     = $using:Domain
-                            Credential       = $credential
-                            PSSessionOption  = $remotePSSessionOption
-                            CommandName      = $using:commands
-                            ShowBanner       = $false
-                            ShowProgress     = $false
-                            TrackPerformance = $false
-                            ErrorAction      = 'Stop'
+                            Organization          = $using:AADOrganization
+                            AppID                 = $using:AADAppID
+                            CertificateThumbPrint = $using:AADCertificateThumbprint
+                            CommandName           = $commands
+                            ShowBanner            = $false
+                            ShowProgress          = $false
+                            TrackPerformance      = $false
+                            ErrorAction           = 'Stop'
                         }
-
                         $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
                         
                         [Void]$informationLogs.Add("Successfully connected to Exchange Online")

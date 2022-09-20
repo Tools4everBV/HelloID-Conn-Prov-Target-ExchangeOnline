@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-ExchangeOnline-RevokePermission-Group
+# HelloID-Conn-Prov-Target-ExchangeOnline-GrantPermission-SharedMailbox
 #
 # Version: 1.2.0
 #####################################################
@@ -27,10 +27,11 @@ switch ($($c.isDebug)) {
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Used to connect to Exchange Online using user credentials (MFA not supported).
-$Domain = $c.Domain
-$Username = $c.Username
-$Password = $c.Password
+# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
+# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+$AADOrganization = $c.AzureADOrganization
+$AADAppID = $c.AzureADAppId
+$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # PowerShell commands to import
 $commands = @(
@@ -202,20 +203,17 @@ try {
                     if ($connectedToExchange -eq $false) {
                         [Void]$verboseLogs.Add("Connecting to Exchange Online..")
 
-                        # Connect to Exchange Online in an unattended scripting scenario using user credentials (MFA not supported).
-                        $securePassword = ConvertTo-SecureString $using:Password -AsPlainText -Force
-                        $credential = [System.Management.Automation.PSCredential]::new($using:Username, $securePassword)
+                        # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
                         $exchangeSessionParams = @{
-                            Organization     = $using:Domain
-                            Credential       = $credential
-                            PSSessionOption  = $remotePSSessionOption
-                            CommandName      = $using:commands
-                            ShowBanner       = $false
-                            ShowProgress     = $false
-                            TrackPerformance = $false
-                            ErrorAction      = 'Stop'
+                            Organization          = $using:AADOrganization
+                            AppID                 = $using:AADAppID
+                            CertificateThumbPrint = $using:AADCertificateThumbprint
+                            CommandName           = $commands
+                            ShowBanner            = $false
+                            ShowProgress          = $false
+                            TrackPerformance      = $false
+                            ErrorAction           = 'Stop'
                         }
-
                         $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
                         
                         [Void]$informationLogs.Add("Successfully connected to Exchange Online")
@@ -245,7 +243,7 @@ try {
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     $success = $false 
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
+                            Action  = "GrantPermission"
                             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                             IsError = $True
                         })
@@ -289,7 +287,7 @@ try {
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
         $success = $false 
         $auditLogs.Add([PSCustomObject]@{
-                Action  = "RevokePermission"
+                Action  = "GrantPermission"
                 Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                 IsError = $True
             })
@@ -313,8 +311,8 @@ try {
 
     if ($true -eq $success) {
         try {
-            # Revoke Exchange Online Groupmembership
-            $removeExoGroupMembership = Invoke-Command -Session $remoteSession -ScriptBlock {
+            # Grant Exchange Online Mailbox permission
+            $addExoMailboxPermission = Invoke-Command -Session $remoteSession -ScriptBlock {
                 try {
                     # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
@@ -331,26 +329,181 @@ try {
                     $informationLogs = [System.Collections.ArrayList]::new()
                     $warningLogs = [System.Collections.ArrayList]::new()
 
-                    # Set mailbox folder permission
-                    $dgSplatParams = @{
-                        Identity                        = $pRef.id
-                        Member                          = $aRef.Guid
-                        BypassSecurityGroupManagerCheck = $true
-                    } 
+                    foreach ($permission in $pRef.Permissions) {
+                        switch ($permission) {
+                            "Full Access" {
+                                try {
+                                    # Set mailbox permission
+                                    $FullAccessPermissionSplatParams = @{
+                                        Identity        = $pRef.id
+                                        User            = $aRef.Guid
+                                        AccessRights    = 'FullAccess'
+                                        InheritanceType = 'All'
+                                        AutoMapping     = $AutoMapping
+                                    } 
 
-                    [Void]$verboseLogs.Add("Revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                    [Void]$verboseLogs.Add("Granting permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
 
-                    if ($dryRun -eq $false) {
-                        $removeDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+                                    if ($dryRun -eq $false) {
+                                        $addFullAccessPermission = Add-MailboxPermission @FullAccessPermissionSplatParams -ErrorAction Stop
 
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        [Void]$warningLogs.Add("DryRun: would revoke permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                        $auditLogs.Add([PSCustomObject]@{
+                                                Action  = "GrantPermission"
+                                                Message = "Successfully granted permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                                IsError = $false
+                                            })
+                                    }
+                                    else {
+                                        [Void]$warningLogs.Add("DryRun: would grant permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                    }
+                                }
+                                catch {
+                                    $ex = $PSItem
+                                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                                        $errorObject = Resolve-HTTPError -Error $ex
+                                        
+                                        $verboseErrorMessage = $errorObject.ErrorMessage
+                                        
+                                        $auditErrorMessage = $errorObject.ErrorMessage
+                                    }
+                                        
+                                    # If error message empty, fall back on $ex.Exception.Message
+                                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                                        $verboseErrorMessage = $ex.Exception.Message
+                                    }
+                                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                                        $auditErrorMessage = $ex.Exception.Message
+                                    }
+                    
+                                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+                    
+                                    $success = $false
+                                    $auditLogs.Add([PSCustomObject]@{
+                                            Action  = "GrantPermission"
+                                            Message = "Error granting permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                                            IsError = $True
+                                        })
+                    
+                                    # Clean up error variables
+                                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+                                }
+                            }
+                            "Send As" {
+                                try {
+                                    # Set mailbox permission
+                                    $sendAsPermissionSplatParams = @{
+                                        Identity     = $pRef.id
+                                        Trustee      = $aRef.Guid
+                                        AccessRights = 'SendAs'
+                                        Confirm      = $false
+                                    } 
+
+                                    [Void]$verboseLogs.Add("Granting permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                    if ($dryRun -eq $false) {
+                                        $addSendAsPermission = Add-RecipientPermission @sendAsPermissionSplatParams -ErrorAction Stop
+
+                                        $auditLogs.Add([PSCustomObject]@{
+                                                Action  = "GrantPermission"
+                                                Message = "Successfully granted permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                                IsError = $false
+                                            })
+                                    }
+                                    else {
+                                        [Void]$warningLogs.Add("DryRun: would grant permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                    }
+                                }
+                                catch {
+                                    $ex = $PSItem
+                                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                                        $errorObject = Resolve-HTTPError -Error $ex
+                                        
+                                        $verboseErrorMessage = $errorObject.ErrorMessage
+                                        
+                                        $auditErrorMessage = $errorObject.ErrorMessage
+                                    }
+                                        
+                                    # If error message empty, fall back on $ex.Exception.Message
+                                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                                        $verboseErrorMessage = $ex.Exception.Message
+                                    }
+                                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                                        $auditErrorMessage = $ex.Exception.Message
+                                    }
+                    
+                                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+                    
+                                    $success = $false
+                                    $auditLogs.Add([PSCustomObject]@{
+                                            Action  = "GrantPermission"
+                                            Message = "Error granting permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                                            IsError = $True
+                                        })
+                    
+                                    # Clean up error variables
+                                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+                                }
+                            }
+                            "Send on Behalf" {
+                                try {
+                                    # Set mailbox permission
+                                    # Can only be assigned to mailbox (so just a user account isn't sufficient, there has to be a mailbox for the user)
+                                    $SendonBehalfPermissionSplatParams = @{
+                                        Identity            = $pRef.id
+                                        GrantSendOnBehalfTo = @{add = "$($aRef.Guid)" }
+                                        Confirm             = $false
+                                    } 
+
+                                    [Void]$verboseLogs.Add("Granting permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+
+                                    if ($dryRun -eq $false) {
+                                        $addSendonBehalfPermission = Set-Mailbox @SendonBehalfPermissionSplatParams -ErrorAction Stop
+
+                                        $auditLogs.Add([PSCustomObject]@{
+                                                Action  = "GrantPermission"
+                                                Message = "Successfully granted permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))"
+                                                IsError = $false
+                                            })
+                                    }
+                                    else {
+                                        [Void]$warningLogs.Add("DryRun: would grant permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid))")
+                                    }
+                                }
+                                catch {
+                                    $ex = $PSItem
+                                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                                        $errorObject = Resolve-HTTPError -Error $ex
+                                        
+                                        $verboseErrorMessage = $errorObject.ErrorMessage
+                                        
+                                        $auditErrorMessage = $errorObject.ErrorMessage
+                                    }
+                                        
+                                    # If error message empty, fall back on $ex.Exception.Message
+                                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
+                                        $verboseErrorMessage = $ex.Exception.Message
+                                    }
+                                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
+                                        $auditErrorMessage = $ex.Exception.Message
+                                    }
+                    
+                                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
+                    
+                                    $success = $false
+                                    $auditLogs.Add([PSCustomObject]@{
+                                            Action  = "GrantPermission"
+                                            Message = "Error granting permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                                            IsError = $True
+                                        })
+                    
+                                    # Clean up error variables
+                                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
+                                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
+                                }
+                            }
+                        }
                     }
                 }
                 catch {
@@ -373,38 +526,12 @@ try {
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
 
-                    if ($auditErrorMessage -like "*isn't a member of the group*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Already no longer a member of the group)"
-                                IsError = $false
-                            }
-                        )
-                    }
-                    elseif ($auditErrorMessage -like "*object '$($pRef.id)' couldn't be found*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Group $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action)"
-                                IsError = $false
-                            }
-                        )
-                    }
-                    elseif ($auditErrorMessage -like "*Couldn't find object ""$($aRef.Guid)""*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Successfully revoked permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action)"
-                                IsError = $false
-                            }
-                        )
-                    }
-                    else {
-                        $success = $false
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Error revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
-                                IsError = $True
-                            })
-                    }
+                    $success = $false
+                    $auditLogs.Add([PSCustomObject]@{
+                            Action  = "GrantPermission"
+                            Message = "Error granting permission for mailbox $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                            IsError = $True
+                        })
 
                     # Clean up error variables
                     Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
@@ -445,8 +572,8 @@ try {
 
             $success = $false 
             $auditLogs.Add([PSCustomObject]@{
-                    Action  = "RevokePermission"
-                    Message = "Error revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
+                    Action  = "GrantPermission"
+                    Message = "Error granting permission for group $($pRef.Name) ($($pRef.id)) to user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
                     IsError = $True
                 })
 
@@ -455,16 +582,16 @@ try {
             Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
         }
         finally {
-            $success = $removeExoGroupMembership.success
-            $auditLogs += $removeExoGroupMembership.auditLogs
+            $success = $addExoMailboxPermission.success
+            $auditLogs += $addExoMailboxPermission.auditLogs
 
             # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-            $verboseLogs = $removeExoGroupMembership.verboseLogs
+            $verboseLogs = $addExoMailboxPermission.verboseLogs
             foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-            $informationLogs = $removeExoGroupMembership.informationLogs
+            $informationLogs = $addExoMailboxPermission.informationLogs
             foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-            $warningLogs = $removeExoGroupMembership.warningLogs
-            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }     
+            $warningLogs = $addExoMailboxPermission.warningLogs
+            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
         }
     }
 }
