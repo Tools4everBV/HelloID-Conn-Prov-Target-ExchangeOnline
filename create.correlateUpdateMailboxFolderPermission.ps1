@@ -47,11 +47,19 @@ $commands = @(
 # Change mapping here
 $account = [PSCustomObject]@{
     userPrincipalName = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
+    mailboxFolderUser        = "Default"
+    mailboxFolderAccessRight = "LimitedDetails"
+    mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
 }
+
+
 
 # Troubleshooting
 # $account = [PSCustomObject]@{
 #     UserPrincipalName = "user@enyoi.onmicrosoft.com"
+#     mailboxFolderUser        = "Default"
+#     mailboxFolderAccessRight = "LimitedDetails"
+#     mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
 # }
 # $dryRun = $false
 
