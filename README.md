@@ -140,7 +140,7 @@ The following settings are required to connect.
 | ------------ | ----------- |
 | Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists __Please note: This has to be the .onmicrosoft domain name__ |
 | Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions. __Please follow the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#step-3-generate-a-self-signed-certificate:~:text=Appendix-,Step%201%3A%20Register%20the%20application%20in%20Azure%20AD,-Note) as reference to configure the App Registration correctly__  |
-| Azure AD Certificate Thumbprint | The thumbprint of the certificate that is linked to the zure AD App Registration __Please note: This certificate has to be locally installed__|
+| Azure AD Certificate Thumbprint | The thumbprint of the certificate that is linked to the Azure AD App Registration __Please note: This certificate has to be locally installed__|
 
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012518799-How-to-add-a-target-system) pages_
