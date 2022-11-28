@@ -27,20 +27,13 @@ $AADAppID = $c.AzureADAppId
 $AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # PowerShell commands to import
+$sessionName = 'HelloID_Prov_Exchange_Online_CRUD'
 $commands = @(
     "Get-User" # Always required
     , "Get-Mailbox"
     , "Get-EXOMailbox"
     , "Set-Mailbox"
     , "Set-MailboxFolderPermission"
-    , "Add-MailboxPermission"
-    , "Remove-MailboxPermission"
-    , "Add-RecipientPermission"
-    , "Remove-RecipientPermission"
-    , "Get-Group"
-    , "Get-DistributionGroup"
-    , "Add-DistributionGroupMember"
-    , "Remove-DistributionGroupMember"
     , "Set-MailboxRegionalConfiguration"
 )
 
@@ -151,7 +144,7 @@ function Set-PSSession {
 }
 #endregion functions
 try {
-    $remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_CRUD'
+    $remoteSession = Set-PSSession -PSSessionName $sessionName
     Connect-PSSession $remoteSession | out-null
 
     try {

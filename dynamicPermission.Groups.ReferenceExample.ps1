@@ -52,11 +52,17 @@ $AADAppID = $c.AzureADAppId
 $AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
 
 # PowerShell commands to import
+$sessionName = 'HelloID_Prov_Exchange_Online_PermissionsGrantRevoke'
 $commands = @(
     "Get-User" # Always required
+    , "Get-Group"
     , "Get-DistributionGroup"
     , "Add-DistributionGroupMember"
     , "Remove-DistributionGroupMember"
+    , "Add-MailboxPermission"
+    , "Remove-MailboxPermission"
+    , "Add-RecipientPermission"
+    , "Remove-RecipientPermission"
 )
 
 # Troubleshooting
@@ -178,7 +184,7 @@ function Set-PSSession {
 #region Execute
 Write-Information ("Existing Permissions: {0}" -f ($eRef.CurrentPermissions.DisplayName | ConvertTo-Json))
 
-$remoteSession = Set-PSSession -PSSessionName 'HelloID_Prov_Exchange_Online_PermissionsGrantRevoke'
+$remoteSession = Set-PSSession -PSSessionName $sessionName
 Connect-PSSession $remoteSession | out-null
 
 # Connect to Exchange Online
@@ -361,8 +367,8 @@ try {
 
                         # Set mailbox folder permission
                         $dgSplatParams = @{
-                            Identity                        = $permission.Name
-                            Member                          = $aRef.Guid
+                            Identity = $permission.Name
+                            Member   = $aRef.Guid
                             # BypassSecurityGroupManagerCheck = $true
                         }
 
@@ -506,8 +512,8 @@ try {
 
                         # Set mailbox folder permission
                         $dgSplatParams = @{
-                            Identity                        = $permission.Name
-                            Member                          = $aRef.Guid
+                            Identity = $permission.Name
+                            Member   = $aRef.Guid
                             # BypassSecurityGroupManagerCheck = $true
                         } 
 

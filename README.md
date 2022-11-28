@@ -14,6 +14,7 @@
 ## Versioning
 | Version | Description | Date |
 | - | - | - |
+| 1.2.0   | Added seperate sessions for actions | 2022/11/28  |
 | 1.1.1   | Updated logging and performance | 2022/09/20  |
 | 1.0.2   | Added examples to connect using a certificate | 2022/07/25  |
 | 1.0.1   | Updated to only import the modules we use for performance increase | 2022/07/04  |
