@@ -65,22 +65,22 @@ $dryRun = $false
 #region Change mapping here
 $desiredPermissions = @{}
 if ($o -ne "revoke") {
-    # Contract Based Logic:
+    # Example: Contract Based Logic:
     foreach ($contract in $p.Contracts) {
         Write-Verbose ("Contract in condition: {0}" -f $contract.Context.InConditions)
-        # if ($contract.Context.InConditions -OR ($dryRun -eq $True)) {
-            # department_<departmentname>
+        if ($contract.Context.InConditions -OR ($dryRun -eq $True)) {
+            # Example: department_<departmentname>
             $groupName = "department_" + $contract.Department.DisplayName
             $desiredPermissions[$groupName] = $groupName
           
-            # # title_<titlename>
+            # Example: title_<titlename>
             # $groupName = "title_" + $contract.Title.Name
             # $desiredPermissions[$groupName] = $groupName
-        # }
+        }
     }
     
-    # Person Based Logic:
-    # location_<locationname>
+    # Example: Person Based Logic:
+    # Example: location_<locationname>
     # $groupName = "location_" + $p.Location.Name
     # $desiredPermissions[$groupName] = $groupName
 }
