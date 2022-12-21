@@ -246,7 +246,7 @@ try {
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
+                            Action  = "DeleteAccount"
                             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                             IsError = $True
                         })
@@ -288,7 +288,7 @@ try {
 
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)" 
         $auditLogs.Add([PSCustomObject]@{
-                Action  = "CreateAccount"
+                Action  = "DeleteAccount"
                 Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                 IsError = $True
             })
@@ -342,7 +342,7 @@ try {
                     }
 
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
+                            Action  = "DeleteAccount"
                             Message = "Successfully queried and correlated to mailbox $($aRef.userPrincipalName) ($($aRef.Guid))"
                             IsError = $false
                         })
@@ -367,7 +367,7 @@ try {
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
+                            Action  = "DeleteAccount"
                             Message = "Error querying mailbox with UserPrincipalName '$($aRef.userPrincipalName)'. Error Message: $auditErrorMessage"
                             IsError = $True
                         })
@@ -410,7 +410,7 @@ try {
         
             Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
             $auditLogs.Add([PSCustomObject]@{
-                    Action  = "CreateAccount"
+                    Action  = "DeleteAccount"
                     Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
                     IsError = $True
                 })
@@ -468,7 +468,7 @@ try {
                         $updateMailbox = Set-MailboxAutoReplyConfiguration  @mailboxSplatParams -ErrorAction Stop
 
                         $auditLogs.Add([PSCustomObject]@{
-                                Action  = "CreateAccount"
+                                Action  = "DeleteAccount"
                                 Message = "Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)"
                                 IsError = $false
                             })
@@ -497,7 +497,7 @@ try {
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
+                            Action  = "DeleteAccount"
                             Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json). Error Message: $auditErrorMessage"
                             IsError = $True
                         })
@@ -540,7 +540,7 @@ try {
         
             Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
             $auditLogs.Add([PSCustomObject]@{
-                    Action  = "CreateAccount"
+                    Action  = "DeleteAccount"
                     Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
                     IsError = $True
                 })
