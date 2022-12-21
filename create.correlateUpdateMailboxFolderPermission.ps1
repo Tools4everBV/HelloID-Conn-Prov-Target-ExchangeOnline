@@ -1,12 +1,12 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Create-Update-MailboxFolderPermission
 #
-# Version: 1.2.0
+# Version: 1.2.1
 #####################################################
 # Initialize default values
 $c = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
-$success = $true # Set to true at start, because only when an error occurs it is set to false
+$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
@@ -39,7 +39,7 @@ $commands = @(
 
 # Change mapping here
 $account = [PSCustomObject]@{
-    userPrincipalName = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
+    userPrincipalName        = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
     mailboxFolderUser        = "Default"
     mailboxFolderAccessRight = "LimitedDetails"
     mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
@@ -154,7 +154,6 @@ try {
                 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                $success = $using:success
                 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                 $dryRun = $using:dryRun
@@ -238,7 +237,6 @@ try {
                     }
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $success = $false 
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "CreateAccount"
                             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
@@ -252,7 +250,6 @@ try {
             }
             finally {
                 $returnobject = @{
-                    success         = $success
                     auditLogs       = $auditLogs
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
@@ -282,7 +279,6 @@ try {
         }
 
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-        $success = $false 
         $auditLogs.Add([PSCustomObject]@{
                 Action  = "CreateAccount"
                 Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
@@ -295,7 +291,6 @@ try {
     }
     finally {
         $auditLogs += $createSessionResult.auditLogs
-        $success = $createSessionResult.success
 
         # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
         $verboseLogs = $createSessionResult.verboseLogs
@@ -306,7 +301,7 @@ try {
         foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     }
 
-    if ($true -eq $success) {
+    if (-NOT($auditLogs.IsError -contains $true)) {
         try {
             # Get Exchange Online Mailbox
             $getExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
@@ -314,7 +309,6 @@ try {
                     # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                    $success = $using:success
                     $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                     $dryRun = $using:dryRun
@@ -363,7 +357,6 @@ try {
                     }
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $success = $false
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "CreateAccount"
                             Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
@@ -378,7 +371,6 @@ try {
                     $returnobject = @{
                         mailbox         = $mailbox
                         aRef            = $aRef
-                        success         = $success
                         auditLogs       = $auditLogs
                         verboseLogs     = $verboseLogs
                         informationLogs = $informationLogs
@@ -408,7 +400,6 @@ try {
             }
         
             Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-            $success = $false 
             $auditLogs.Add([PSCustomObject]@{
                     Action  = "CreateAccount"
                     Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
@@ -421,7 +412,6 @@ try {
         }
         finally {
             $aRef = $getExoMailbox.aRef
-            $success = $getExoMailbox.success
             $auditLogs += $getExoMailbox.auditLogs
             $mailbox = $getExoMailbox.mailbox
 
@@ -435,7 +425,8 @@ try {
         }
     }
 
-    if ($true -eq $success) {
+    # Update Mailbox Folder Permission
+    if (-NOT($auditLogs.IsError -contains $true)) {
         try {
             # Update Exchange Online Mailbox
             $updateExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
@@ -443,7 +434,6 @@ try {
                     # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                    $success = $using:success
                     $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                     $dryRun = $using:dryRun
@@ -498,7 +488,6 @@ try {
                     }
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $success = $false
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "CreateAccount"
                             Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json). Error Message: $auditErrorMessage"
@@ -513,7 +502,6 @@ try {
                     $returnobject = @{
                         mailbox         = $mailbox
                         aRef            = $aRef
-                        success         = $success
                         auditLogs       = $auditLogs
                         verboseLogs     = $verboseLogs
                         informationLogs = $informationLogs
@@ -543,7 +531,6 @@ try {
             }
         
             Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-            $success = $false 
             $auditLogs.Add([PSCustomObject]@{
                     Action  = "CreateAccount"
                     Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
@@ -556,7 +543,6 @@ try {
         }
         finally {
             $aRef = $updateExoMailbox.aRef
-            $success = $updateExoMailbox.success
             $auditLogs += $updateExoMailbox.auditLogs
 
             # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
@@ -576,6 +562,11 @@ finally {
         Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
     }
 
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-NOT($auditLogs.IsError -contains $true)) {
+        $success = $true
+    }
+
     # Send results
     $result = [PSCustomObject]@{
         Success          = $success
@@ -591,5 +582,5 @@ finally {
         }
     }
 
-    Write-Output $result | ConvertTo-Json -Depth 10
+    Write-Output ($result | ConvertTo-Json -Depth 10)
 }

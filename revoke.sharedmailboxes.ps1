@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-RevokePermission-SharedMailbox
 #
-# Version: 1.2.0
+# Version: 1.2.1
 #####################################################
 #region Initialize default properties
 $c = $configuration | ConvertFrom-Json
@@ -13,7 +13,7 @@ $mRef = $managerAccountReference | ConvertFrom-Json
 # The permissionReference object contains the Identification object provided in the retrieve permissions call
 $pRef = $permissionReference | ConvertFrom-Json
 
-$success = $true # Set to true at start, because only when an error occurs it is set to false
+$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
@@ -153,7 +153,6 @@ try {
                 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                $success = $using:success
                 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                 $dryRun = $using:dryRun
@@ -237,7 +236,6 @@ try {
                     }
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $success = $false 
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "RevokePermission"
                             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
@@ -251,7 +249,6 @@ try {
             }
             finally {
                 $returnobject = @{
-                    success         = $success
                     auditLogs       = $auditLogs
                     verboseLogs     = $verboseLogs
                     informationLogs = $informationLogs
@@ -281,7 +278,6 @@ try {
         }
 
         Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-        $success = $false 
         $auditLogs.Add([PSCustomObject]@{
                 Action  = "RevokePermission"
                 Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
@@ -294,7 +290,6 @@ try {
     }
     finally {
         $auditLogs += $createSessionResult.auditLogs
-        $success = $createSessionResult.success
 
         # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
         $verboseLogs = $createSessionResult.verboseLogs
@@ -305,7 +300,7 @@ try {
         foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
     }
 
-    if ($true -eq $success) {
+    if (-NOT($auditLogs.IsError -contains $true)) {
         try {
             # Revoke Exchange Online Mailbox permission
             $removeExoMailboxPermission = Invoke-Command -Session $remoteSession -ScriptBlock {
@@ -313,7 +308,6 @@ try {
                     # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                    $success = $using:success
                     $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                     $dryRun = $using:dryRun
@@ -373,24 +367,23 @@ try {
                     
                                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     
-                                    if ($auditErrorMessage -like "*object '$($pRef.id)' couldn't be found*") {
+                                    if ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($pRef.id)*") {
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
-                                                Message = "Successfully revoked permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                                Message = "Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipped revoke of permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                                 IsError = $false
                                             }
                                         )
                                     }
-                                    elseif ($auditErrorMessage -like "*User or group ""$($aRef.Guid)"" wasn't found*") {
+                                    elseif ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($aRef.Guid)*") {
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
-                                                Message = "Successfully revoked permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                                Message = "User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipped revoke of permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                                 IsError = $false
                                             }
                                         )
                                     }
                                     else {
-                                        $success = $false
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
                                                 Message = "Error revoking permission 'FullAccess' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
@@ -448,24 +441,23 @@ try {
                     
                                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     
-                                    if ($auditErrorMessage -like "*object '$($pRef.id)' couldn't be found*") {
+                                    if ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($pRef.id)*") {
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
-                                                Message = "Successfully revoked permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                                Message = "Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipped revoke of permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                                 IsError = $false
                                             }
                                         )
                                     }
-                                    elseif ($auditErrorMessage -like "*User or group ""$($aRef.Guid)"" wasn't found*") {
+                                    elseif ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($aRef.Guid)*") {
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
-                                                Message = "Successfully revoked permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                                Message = "User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipped revoke of permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                                 IsError = $false
                                             }
                                         )
                                     }
                                     else {
-                                        $success = $false
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
                                                 Message = "Error revoking permission 'SendAs' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
@@ -523,24 +515,23 @@ try {
                     
                                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
                     
-                                    if ($auditErrorMessage -like "*object '$($pRef.id)' couldn't be found*") {
+                                    if ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($pRef.id)*") {
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
-                                                Message = "Successfully revoked permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                                Message = "Mailbox $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipped revoke of permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                                 IsError = $false
                                             }
                                         )
                                     }
-                                    elseif ($auditErrorMessage -like "*User or group ""$($aRef.Guid)"" wasn't found*") {
+                                    elseif ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($aRef.Guid)*") {
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
-                                                Message = "Successfully revoked permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)) (User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                                Message = "User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipped revoke of permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                                 IsError = $false
                                             }
                                         )
                                     }
                                     else {
-                                        $success = $false
                                         $auditLogs.Add([PSCustomObject]@{
                                                 Action  = "RevokePermission"
                                                 Message = "Error revoking permission 'SendonBehalf' for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
@@ -576,7 +567,6 @@ try {
 
                     [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
 
-                    $success = $false
                     $auditLogs.Add([PSCustomObject]@{
                             Action  = "RevokePermission"
                             Message = "Error revoking permission for mailbox $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
@@ -589,7 +579,6 @@ try {
                 }
                 finally {
                     $returnobject = @{
-                        success         = $success
                         auditLogs       = $auditLogs
                         verboseLogs     = $verboseLogs
                         informationLogs = $informationLogs
@@ -620,7 +609,6 @@ try {
         
             Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
 
-            $success = $false 
             $auditLogs.Add([PSCustomObject]@{
                     Action  = "RevokePermission"
                     Message = "Error revoking permission for group $($pRef.Name) ($($pRef.id)) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
@@ -632,7 +620,6 @@ try {
             Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
         }
         finally {
-            $success = $removeExoMailboxPermission.success
             $auditLogs += $removeExoMailboxPermission.auditLogs
 
             # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
@@ -650,6 +637,11 @@ finally {
     if ($null -ne $remoteSession) {
         Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
         Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
+    }
+
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-NOT($auditLogs.IsError -contains $true)) {
+        $success = $true
     }
 
     # Send results

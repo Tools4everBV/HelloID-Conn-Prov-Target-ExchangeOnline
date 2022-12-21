@@ -14,6 +14,7 @@
 ## Versioning
 | Version | Description | Date |
 | - | - | - |
+| 1.2.1   | Updated to error handling to be country/language independent | 2022/12/21  |
 | 1.2.0   | Added seperate sessions for actions | 2022/11/28  |
 | 1.1.1   | Updated logging and performance | 2022/09/20  |
 | 1.0.2   | Added examples to connect using a certificate | 2022/07/25  |

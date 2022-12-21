@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Permissions-Groups
 #
-# Version: 1.2.0
+# Version: 1.2.1
 #####################################################
 #region Initialize default properties
 $c = $configuration | ConvertFrom-Json

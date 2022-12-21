@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-DynamicPermissions-Groups
 #
-# Version: 1.2.0
+# Version: 1.2.1
 #####################################################
 
 #region Initialize default properties
@@ -13,7 +13,7 @@ $m = $manager | ConvertFrom-Json
 $aRef = $accountReference | ConvertFrom-Json
 $mRef = $managerAccountReference | ConvertFrom-Json
 
-$success = $True
+$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
 $auditLogs = New-Object Collections.Generic.List[PSCustomObject]
 
 # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
@@ -66,7 +66,7 @@ $commands = @(
 )
 
 # Troubleshooting
-$dryRun = $false
+# $dryRun = $false
 
 #region Change mapping here
 $desiredPermissions = @{}
@@ -91,6 +91,8 @@ if ($o -ne "revoke") {
     # $desiredPermissions[$groupName] = $groupName
 }
 Write-Information ("Defined Permissions: {0}" -f ($desiredPermissions.keys | ConvertTo-Json))
+
+Write-Information ("Existing Permissions: {0}" -f ($eRef.CurrentPermissions.DisplayName | ConvertTo-Json))
 #endregion Change mapping here
 
 #region functions
@@ -182,8 +184,6 @@ function Set-PSSession {
 #endregion functions
 
 #region Execute
-Write-Information ("Existing Permissions: {0}" -f ($eRef.CurrentPermissions.DisplayName | ConvertTo-Json))
-
 $remoteSession = Set-PSSession -PSSessionName $sessionName
 Connect-PSSession $remoteSession | out-null
 
@@ -274,7 +274,6 @@ try {
                 }
 
                 [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                $success = $false 
                 $auditLogs.Add([PSCustomObject]@{
                         Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
                         IsError = $True
@@ -287,7 +286,6 @@ try {
         }
         finally {
             $returnobject = @{
-                success         = $success
                 auditLogs       = $auditLogs
                 verboseLogs     = $verboseLogs
                 informationLogs = $informationLogs
@@ -317,7 +315,6 @@ catch {
     }
 
     Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-    $success = $false 
     $auditLogs.Add([PSCustomObject]@{
             Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
             IsError = $True
@@ -353,7 +350,6 @@ try {
                         # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                        $success = $using:success
                         $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                         $dryRun = $using:dryRun
@@ -416,7 +412,6 @@ try {
                             )
                         }
                         else {
-                            $success = $false
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = "GrantPermission"
                                     Message = "Error granting permission for group '$($permission.Name)' to user '$($aRef.UserPrincipalName) ($($aRef.Guid))'. Error Message: $auditErrorMessage"
@@ -430,7 +425,6 @@ try {
                     }
                     finally {
                         $returnobject = @{
-                            success         = $success
                             auditLogs       = $auditLogs
                             verboseLogs     = $verboseLogs
                             informationLogs = $informationLogs
@@ -461,7 +455,6 @@ try {
             
                 Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
 
-                $success = $false 
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "GrantPermission"
                         Message = "Error granting permission for group '$($permission.Name)' to user '$($aRef.UserPrincipalName) ($($aRef.Guid))'. Error Message: $auditErrorMessage"
@@ -473,7 +466,6 @@ try {
                 Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
             }
             finally {
-                $success = $addExoGroupMembership.success
                 $auditLogs += $addExoGroupMembership.auditLogs
 
                 # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
@@ -498,7 +490,6 @@ try {
                         # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
                         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
-                        $success = $using:success
                         $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                         $dryRun = $using:dryRun
@@ -552,35 +543,34 @@ try {
 
                         [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
 
-                        if ($auditErrorMessage -like "*isn't a member of the group*") {
+                        if ($auditErrorMessage -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = "RevokePermission"
-                                    Message = "Successfully revoked permission for group '$($permission.Name)' from user '$($aRef.UserPrincipalName) ($($aRef.Guid))' (Already no longer a member of the group)"
+                                    Message = "User $($aRef.UserPrincipalName) ($($aRef.Guid)) isn't a member of the group $($permission.Name). Skipped revoke of permission for group $($permission.Name) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                     IsError = $false
                                 }
                             )
                         }
-                        elseif ($auditErrorMessage -like "*object '*' couldn't be found*") {
+                        elseif ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($permission.Name)*") {
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = "RevokePermission"
-                                    Message = "Successfully revoked permission for group '$($permission.Name)' from user '$($aRef.UserPrincipalName) ($($aRef.Guid))' (Group '$($permission.Name)' couldn't be found. Possibly no longer exists. Skipping action)"
+                                    Message = "Group $($permission.Name) couldn't be found. Possibly no longer exists. Skipped revoke of permission for group $($permission.Name) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                     IsError = $false
                                 }
                             )
                         }
-                        elseif ($auditErrorMessage -like "*Couldn't find object ""$($aRef.Guid)""*") {
+                        elseif ($auditErrorMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $auditErrorMessage -like "*$($aRef.Guid)*") {
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = "RevokePermission"
-                                    Message = "Successfully revoked permission for group '$($permission.Name)' from user '$($aRef.UserPrincipalName) ($($aRef.Guid))' (User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipping action)"
+                                    Message = "User $($aRef.UserPrincipalName) ($($aRef.Guid)) couldn't be found. Possibly no longer exists. Skipped revoke of permission for group $($permission.Name) from user $($aRef.UserPrincipalName) ($($aRef.Guid))"
                                     IsError = $false
                                 }
                             )
                         }
                         else {
-                            $success = $false
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = "RevokePermission"
-                                    Message = "Error revoking permission for group '$($permission.Name)' from user '$($aRef.UserPrincipalName) ($($aRef.Guid))'. Error Message: $auditErrorMessage"
+                                    Message = "Error revoking permission for group $($permission.Name) from user $($aRef.UserPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
                                     IsError = $True
                                 })
                         }
@@ -591,7 +581,6 @@ try {
                     }
                     finally {
                         $returnobject = @{
-                            success         = $success
                             auditLogs       = $auditLogs
                             verboseLogs     = $verboseLogs
                             informationLogs = $informationLogs
@@ -622,7 +611,6 @@ try {
             
                 Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
 
-                $success = $false 
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = "RevokePermission"
                         Message = "Error revoking permission for group '$($permission.Name)' from user '$($aRef.UserPrincipalName) ($($aRef.Guid))'. Error Message: $auditErrorMessage"
@@ -634,7 +622,6 @@ try {
                 Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
             }
             finally {
-                $success = $removeExoGroupMembership.success
                 $auditLogs += $removeExoGroupMembership.auditLogs
 
                 # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
@@ -680,9 +667,9 @@ finally {
         Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
     }
 
-    # Check if auditLogs contains errors, if so, set success to false
-    if ($auditLogs.IsError -contains $true) {
-        $success = $false
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-NOT($auditLogs.IsError -contains $true)) {
+        $success = $true
     }
 
     #region Build up result
