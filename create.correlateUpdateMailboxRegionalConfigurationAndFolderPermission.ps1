@@ -52,26 +52,7 @@ $account = [PSCustomObject]@{
     # Mailbox Folder Permission
     mailboxFolderUser         = "Default"
     mailboxFolderAccessRight  = "Reviewer"
-    mailboxFolderId           = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
 }
-
-# # Troubleshooting
-# $account = [PSCustomObject]@{
-#     UserPrincipalName         = "user@enyoi.onmicrosoft.com"
-
-#     # Mailbox Regional Configuration
-#     language                  = 'nl-NL'
-#     dateFormat                = 'dd-MM-yy'
-#     timeFormat                = "HH:mm" 
-#     timeZone                  = "W. Europe Standard Time" 
-#     localizeDefaultFolderName = $true
-
-#     # Mailbox Folder Permission
-#     mailboxFolderUser        = "Default"
-#     mailboxFolderAccessRight = "Reviewer"
-#     mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
-# }
-# $dryRun = $false
 
 #region functions
 function Resolve-HTTPError {
@@ -596,12 +577,15 @@ try {
                     $informationLogs = [System.Collections.ArrayList]::new()
                     $warningLogs = [System.Collections.ArrayList]::new()
 
+                    # Get Mailbox "Calendar" folder name
+                    $mailboxFolderId = Get-MailboxFolderStatistics -Identity $account.userPrincipalName -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar'} | Select-Object Name
+
                     # Set mailbox folder permission
                     $mailboxSplatParams = @{
-                        Identity     = "$($mailbox.UserPrincipalName):\$($account.mailboxFolderId)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
+                        Identity     = "$($mailbox.UserPrincipalName):\$($mailboxFolderId)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
                         User         = $account.mailboxFolderUser
                         AccessRights = $account.mailboxFolderAccessRight
-                    } 
+                    }
 
                     [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
 
