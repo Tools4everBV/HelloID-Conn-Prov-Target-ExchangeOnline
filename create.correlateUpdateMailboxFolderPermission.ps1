@@ -42,19 +42,7 @@ $account = [PSCustomObject]@{
     userPrincipalName        = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
     mailboxFolderUser        = "Default"
     mailboxFolderAccessRight = "LimitedDetails"
-    mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
 }
-
-
-
-# Troubleshooting
-# $account = [PSCustomObject]@{
-#     UserPrincipalName = "user@enyoi.onmicrosoft.com"
-#     mailboxFolderUser        = "Default"
-#     mailboxFolderAccessRight = "LimitedDetails"
-#     mailboxFolderId          = "Agenda" # Can differ according to language, so choose from: "Calendar"" or "Agenda"
-# }
-# $dryRun = $false
 
 #region functions
 function Resolve-HTTPError {
@@ -446,9 +434,12 @@ try {
                     $informationLogs = [System.Collections.ArrayList]::new()
                     $warningLogs = [System.Collections.ArrayList]::new()
 
+                    # Get Mailbox "Calendar" folder name
+                    $mailboxFolderId = Get-MailboxFolderStatistics -Identity $account.userPrincipalName -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar'} | Select-Object Name
+
                     # Set mailbox folder permission
                     $mailboxSplatParams = @{
-                        Identity     = "$($mailbox.UserPrincipalName):\$($account.mailboxFolderId)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
+                        Identity     = "$($mailbox.UserPrincipalName):\$($mailboxFolderId)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
                         User         = $account.mailboxFolderUser
                         AccessRights = $account.mailboxFolderAccessRight
                     } 
