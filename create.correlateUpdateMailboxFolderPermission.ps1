@@ -35,6 +35,7 @@ $commands = @(
     , "Set-Mailbox"
     , "Set-MailboxFolderPermission"
     , "Set-MailboxRegionalConfiguration"
+    , "Get-MailboxFolderStatistics"
 )
 
 # Change mapping here
