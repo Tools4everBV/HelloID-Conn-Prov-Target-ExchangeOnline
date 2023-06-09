@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Create-Update-MailboxRegionalConfiguration
 #
-# Version: 1.2.1
+# Version: 2.0.0
 #####################################################
 # Initialize default values
 $c = $configuration | ConvertFrom-Json
@@ -14,32 +14,35 @@ $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Set debug logging
 switch ($($c.isDebug)) {
-    $true { $VerbosePreference = 'Continue' }
-    $false { $VerbosePreference = 'SilentlyContinue' }
+    $true { $VerbosePreference = "Continue" }
+    $false { $VerbosePreference = "SilentlyContinue" }
 }
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
+# Define configuration properties as required
+$requiredConfigurationFields = @("AzureADOrganization", "AzureADTenantId", "AzureADAppId", "AzureADAppSecret")
+
 # Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
 # Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
 $AADOrganization = $c.AzureADOrganization
+$AADTenantId = $c.AzureADTenantId
 $AADAppID = $c.AzureADAppId
-$AADCertificateThumbprint = $c.AzureADCertificateThumbprint # Certificate has to be locally installed
+$AADAppSecret = $c.AzureADAppSecret
 
 # PowerShell commands to import
-$sessionName = 'HelloID_Prov_Exchange_Online_CRUD'
 $commands = @(
     "Get-User" # Always required
-    , "Get-Mailbox"
     , "Get-EXOMailbox"
-    , "Set-Mailbox"
-    , "Set-MailboxFolderPermission"
     , "Set-MailboxRegionalConfiguration"
 )
 
+# Correlation values
+$correlationProperty = "userPrincipalName" # Has to match the name of the unique identifier
+$correlationValue = $p.Accounts.MicrosoftAzureAD.userPrincipalName # Has to match the value of the unique identifier
+
 # Change mapping here
 $account = [PSCustomObject]@{
-    userPrincipalName         = $p.Accounts.MicrosoftActiveDirectory.userPrincipalName
     language                  = 'nl-NL'
     dateFormat                = 'dd-MM-yy'
     timeFormat                = "H:mm" 
@@ -47,16 +50,8 @@ $account = [PSCustomObject]@{
     localizeDefaultFolderName = $true
 }
 
-# Troubleshooting
-# $account = [PSCustomObject]@{
-#     UserPrincipalName         = "user@enyoi.onmicrosoft.com"
-#     language                  = 'nl-NL'
-#     dateFormat                = 'dd-MM-yy'
-#     timeFormat                = "H:mm" 
-#     timeZone                  = "W. Europe Standard Time" 
-#     localizeDefaultFolderName = $true
-# }
-# $dryRun = $false
+# Define account properties as required
+$requiredConfigurationFields = @("language", "dateFormat", "timeFormat", "timeZone", "localizeDefaultFolderName")
 
 #region functions
 function Resolve-HTTPError {
@@ -73,505 +68,269 @@ function Resolve-HTTPError {
             MyCommand             = $ErrorObject.InvocationInfo.MyCommand
             RequestUri            = $ErrorObject.TargetObject.RequestUri
             ScriptStackTrace      = $ErrorObject.ScriptStackTrace
-            ErrorMessage          = ''
+            ErrorMessage          = ""
         }
-        if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') {
+        if ($ErrorObject.Exception.GetType().FullName -eq "Microsoft.PowerShell.Commands.HttpResponseException") {
             $httpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
         }
-        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+        elseif ($ErrorObject.Exception.GetType().FullName -eq "System.Net.WebException") {
             $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
         }
         Write-Output $httpErrorObj
     }
 }
 
-function Set-PSSession {
-    <#
-    .SYNOPSIS
-        Get or create a "remote" Powershell session
-    .DESCRIPTION
-        Get or create a "remote" Powershell session at the local computer
-    .EXAMPLE
-        PS C:\> $remoteSession = Set-PSSession -PSSessionName ($psSessionName + $mutex.Number) # Test1
-       Get or Create a "remote" Powershell session at the local computer with computername and number: Test1 And assign to a $varaible which can be used to make remote calls.
-    .OUTPUTS
-        $remoteSession [System.Management.Automation.Runspaces.PSSession]
-    .NOTES
-        Make sure you always disconnect the PSSession, otherwise the PSSession is blocked to reconnect. 
-        Place the following code in the finally block to make sure the session will be disconnected
-        if ($null -ne $remoteSession) {  
-            Disconnect-PSSession $remoteSession 
-        }
-    #>
-    [OutputType([System.Management.Automation.Runspaces.PSSession])]  
-    param(       
-        [Parameter(mandatory)]
-        [string]$PSSessionName
+function Get-ErrorMessage {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory,
+            ValueFromPipeline
+        )]
+        [object]$ErrorObject
     )
-    try {       
-        $sessionObject = $null              
-        $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
-        if ($null -eq $sessionObject) {
-            # Due to some inconsistency, the Get-PSSession does not always throw an error  
-            throw "The command cannot find a PSSession that has the name '$PSSessionName'."
+    process {
+        $errorMessage = [PSCustomObject]@{
+            VerboseErrorMessage = $null
+            AuditErrorMessage   = $null
         }
-        # To Avoid using mutliple sessions at the same time.
-        if ($sessionObject.length -gt 1) {
-            Remove-PSSession -Id ($sessionObject.id | Sort-Object | Select-Object -first 1)
-            $sessionObject = Get-PSSession -ComputerName $env:computername -Name $PSSessionName -ErrorAction stop
-        }        
-        Write-Verbose "Remote Powershell session is found, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
-    }
-    catch {
-        Write-Verbose "Remote Powershell session not found: $($_)"
-    }
 
-    if ($null -eq $sessionObject) { 
-        try {
-            $remotePSSessionOption = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 5).TotalMilliseconds
-            $sessionObject = New-PSSession -ComputerName $env:computername -EnableNetworkAccess:$true -Name $PSSessionName -SessionOption $remotePSSessionOption
-            Write-Verbose "Successfully created new Remote Powershell session, Name: $($sessionObject.Name), ComputerName: $($sessionObject.ComputerName)"
+        if ( $($ErrorObject.Exception.GetType().FullName -eq "Microsoft.PowerShell.Commands.HttpResponseException") -or $($ErrorObject.Exception.GetType().FullName -eq "System.Net.WebException")) {
+            $httpErrorObject = Resolve-HTTPError -Error $ErrorObject
+
+            $errorMessage.VerboseErrorMessage = $httpErrorObject.ErrorMessage
+
+            $errorMessage.AuditErrorMessage = $httpErrorObject.ErrorMessage
         }
-        catch {
-            throw "Could not create PowerShell Session with name '$PSSessionName' at computer with name '$env:computername': $($_.Exception.Message)"
+
+        # If error message empty, fall back on $ex.Exception.Message
+        if ([String]::IsNullOrEmpty($errorMessage.VerboseErrorMessage)) {
+            $errorMessage.VerboseErrorMessage = $ErrorObject.Exception.Message
         }
-    }
+        if ([String]::IsNullOrEmpty($errorMessage.AuditErrorMessage)) {
+            $errorMessage.AuditErrorMessage = $ErrorObject.Exception.Message
+        }
 
-    Write-Verbose "Remote Powershell Session '$($sessionObject.Name)' State: '$($sessionObject.State)' Availability: '$($sessionObject.Availability)'"
-    if ($sessionObject.Availability -eq "Busy") {
-        throw "Remote Powershell Session '$($sessionObject.Name)' is in Use"
+        Write-Output $errorMessage
     }
-
-    Write-Output $sessionObject
 }
 #endregion functions
 
 try {
-    $remoteSession = Set-PSSession -PSSessionName $sessionName
-    Connect-PSSession $remoteSession | out-null
+    # Check if required fields are available in configuration object
+    $incompleteConfiguration = $false
+    foreach ($requiredConfigurationField in $requiredConfigurationFields) {
+        if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
+            $incompleteConfiguration = $true
+            Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+        }
 
-    try {
-        # if it does not exist create new session to exchange online in remote session     
-        $createSessionResult = Invoke-Command -Session $remoteSession -ScriptBlock {
-            try {
-                # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+        if ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+            $incompleteConfiguration = $true
+            Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+        }
+    }
 
-                $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+    if ($incompleteConfiguration -eq $true) {
+        throw "Configuration object incomplete, cannot continue."
+    }
 
-                $dryRun = $using:dryRun
+    # Check if required fields are available for correlation
+    $incompleteCorrelationValues = $false
+    if ([String]::IsNullOrEmpty($correlationProperty)) {
+        $incompleteCorrelationValues = $true
+        Write-Warning "Required correlation field [$correlationProperty] has a null or empty value"
+    }
+    if ([String]::IsNullOrEmpty($correlationValue)) {
+        $incompleteCorrelationValues = $true
+        Write-Warning "Required correlation field [$correlationValue] has a null or empty value"
+    }
+    
+    if ($incompleteCorrelationValues -eq $true) {
+        throw "Correlation values incomplete, cannot continue. CorrelationProperty = [$correlationProperty], CorrelationValue = [$correlationValue]'"
+    }
 
-                # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
-                $verboseLogs = [System.Collections.ArrayList]::new()
-                $informationLogs = [System.Collections.ArrayList]::new()
-                $warningLogs = [System.Collections.ArrayList]::new()
-                    
-                # Import module
-                $moduleName = "ExchangeOnlineManagement"
-                $commands = $using:commands
+    # Check if required fields are available in account object
+    $incompleteAccount = $false
+    foreach ($requiredAccountField in $requiredAccountFields) {
+        if ($requiredAccountField -notin $account.PsObject.Properties.Name) {
+            $incompleteAccount = $true
+            Write-Warning "Required account object field [$requiredAccountField] is missing"
+        }
 
-                # If module is imported say that and do nothing
-                if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
-                    [Void]$verboseLogs.Add("Module $ModuleName is already imported.")
-                }
-                else {
-                    # If module is not imported, but available on disk then import
-                    if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
-                        $module = Import-Module $ModuleName -Cmdlet $commands
-                        [Void]$verboseLogs.Add("Imported module $ModuleName")
-                    }
-                    else {
-                        # If the module is not imported, not available and not in the online gallery then abort
-                        throw "Module $ModuleName not imported, not available. Please install the module using: Install-Module -Name $ModuleName -Force"
-                    }
-                }
+        if ([String]::IsNullOrEmpty($account.$requiredAccountFields)) {
+            $incompleteAccount = $true
+            Write-Warning "Required account object field [$requiredAccountFields] has a null or empty value"
+        }
+    }
 
-                # Check if Exchange Connection already exists
-                try {
-                    $checkCmd = Get-User -ResultSize 1 -ErrorAction Stop | Out-Null
-                    $connectedToExchange = $true
-                }
-                catch {
-                    if ($_.Exception.Message -like "The term 'Get-User' is not recognized as the name of a cmdlet, function, script file, or operable program.*") {
-                        $connectedToExchange = $false
-                    }
-                }
-                
-                # Connect to Exchange
-                try {
-                    if ($connectedToExchange -eq $false) {
-                        [Void]$verboseLogs.Add("Connecting to Exchange Online..")
+    if ($incompleteAccount -eq $true) {
+        throw "Account object incomplete, cannot continue."
+    }
 
-                        # Connect to Exchange Online in an unattended scripting scenario using a certificate thumbprint (certificate has to be locally installed).
-                        $exchangeSessionParams = @{
-                            Organization          = $using:AADOrganization
-                            AppID                 = $using:AADAppID
-                            CertificateThumbPrint = $using:AADCertificateThumbprint
-                            CommandName           = $commands
-                            ShowBanner            = $false
-                            ShowProgress          = $false
-                            TrackPerformance      = $false
-                            ErrorAction           = 'Stop'
-                        }
-                        $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
-                        
-                        [Void]$informationLogs.Add("Successfully connected to Exchange Online")
-                    }
-                    else {
-                        [Void]$informationLogs.Add("Successfully connected to Exchange Online (already connected)")
-                    }
-                }
-                catch {
-                    $ex = $PSItem
-                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObject = Resolve-HTTPError -Error $ex
-                
-                        $verboseErrorMessage = $errorObject.ErrorMessage
-                
-                        $auditErrorMessage = $errorObject.ErrorMessage
-                    }
-                
-                    # If error message empty, fall back on $ex.Exception.Message
-                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-                        $verboseErrorMessage = $ex.Exception.Message
-                    }
-                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-                        $auditErrorMessage = $ex.Exception.Message
-                    }
+    try {           
+        # Import module
+        $moduleName = "ExchangeOnlineManagement"
 
-                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
-                            Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
-                            IsError = $True
-                        })
-
-                    # Clean up error variables
-                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
-                }
+        # If module is imported say that and do nothing
+        if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
+            Write-Verbose "Module [$ModuleName] is already imported."
+        }
+        else {
+            # If module is not imported, but available on disk then import
+            if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
+                $module = Import-Module $ModuleName -Cmdlet $commands -Verbose:$false
+                Write-Verbose "Imported module [$ModuleName]"
             }
-            finally {
-                $returnobject = @{
-                    auditLogs       = $auditLogs
-                    verboseLogs     = $verboseLogs
-                    informationLogs = $informationLogs
-                    warningLogs     = $warningLogs
-                }
-                $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
-                Write-Output $returnobject
+            else {
+                # If the module is not imported, not available and not in the online gallery then abort
+                throw "Module [$ModuleName] is not available. Please install the module using: Install-Module -Name [$ModuleName] -Force"
             }
         }
     }
     catch {
         $ex = $PSItem
-        if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $errorObject = Resolve-HTTPError -Error $ex
+        $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-            $verboseErrorMessage = $errorObject.ErrorMessage
-
-            $auditErrorMessage = $errorObject.ErrorMessage
-        }
-
-        # If error message empty, fall back on $ex.Exception.Message
-        if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-            $verboseErrorMessage = $ex.Exception.Message
-        }
-        if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-            $auditErrorMessage = $ex.Exception.Message
-        }
-
-        Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
+        Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
         $auditLogs.Add([PSCustomObject]@{
-                Action  = "CreateAccount"
-                Message = "Error connecting to Exchange Online. Error Message: $auditErrorMessage"
+                # Action  = "" # Optional
+                Message = "Error importing module [$ModuleName]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
-        # Clean up error variables
-        Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-        Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
-    }
-    finally {
-        $auditLogs += $createSessionResult.auditLogs
-
-        # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-        $verboseLogs = $createSessionResult.verboseLogs
-        foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-        $informationLogs = $createSessionResult.informationLogs
-        foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-        $warningLogs = $createSessionResult.warningLogs
-        foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+        # Skip further actions, as this is a critical error
+        continue
     }
 
-    if (-NOT($auditLogs.IsError -contains $true)) {
-        try {
-            # Get Exchange Online Mailbox
-            $getExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
-                try {
-                    # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+    # Connect to Exchange
+    try {
+        # Create access token
+        Write-Verbose "Creating Access Token"
 
-                    $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-                    $dryRun = $using:dryRun
-                    $account = $using:account
-
-                    # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
-                    $verboseLogs = [System.Collections.ArrayList]::new()
-                    $informationLogs = [System.Collections.ArrayList]::new()
-                    $warningLogs = [System.Collections.ArrayList]::new()
-
-                    [Void]$verboseLogs.Add("Querying mailbox with UserPrincipalName '$($account.userPrincipalName)'")
-
-                    if ([string]::IsNullOrEmpty($account.userPrincipalName)) { throw "No UserPrincipalName provided" }  
-                    
-                    $mailbox = Get-EXOMailbox -Identity $account.userPrincipalName -ErrorAction Stop
-
-                    if ($null -eq $mailbox.Guid) { throw "Failed to return a mailbox with UserPrincipalName '$($account.userPrincipalName)'" }
-
-                    $aRef = @{
-                        Guid              = $mailbox.Guid
-                        UserPrincipalName = $mailbox.UserPrincipalName
-                    }
-
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
-                            Message = "Successfully queried and correlated to mailbox $($aRef.userPrincipalName) ($($aRef.Guid))"
-                            IsError = $false
-                        })
-                }
-                catch { 
-                    $ex = $PSItem
-                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObject = Resolve-HTTPError -Error $ex
-                    
-                        $verboseErrorMessage = $errorObject.ErrorMessage
-                    
-                        $auditErrorMessage = $errorObject.ErrorMessage
-                    }
-                    
-                    # If error message empty, fall back on $ex.Exception.Message
-                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-                        $verboseErrorMessage = $ex.Exception.Message
-                    }
-                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-                        $auditErrorMessage = $ex.Exception.Message
-                    }
-
-                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
-                            Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
-                            IsError = $True
-                        })
-
-                    # Clean up error variables
-                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
-                }
-                finally {
-                    $returnobject = @{
-                        mailbox         = $mailbox
-                        aRef            = $aRef
-                        auditLogs       = $auditLogs
-                        verboseLogs     = $verboseLogs
-                        informationLogs = $informationLogs
-                        warningLogs     = $warningLogs
-                    }
-                    $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
-                    Write-Output $returnobject 
-                }
-            }
+        $baseUri = "https://login.microsoftonline.com/"
+        $authUri = $baseUri + "$AADTenantId/oauth2/token"
+        
+        $body = @{
+            grant_type    = "client_credentials"
+            client_id     = "$AADAppID"
+            client_secret = "$AADAppSecret"
+            resource      = "https://outlook.office365.com"
         }
-        catch {
-            $ex = $PSItem
-            if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                $errorObject = Resolve-HTTPError -Error $ex
         
-                $verboseErrorMessage = $errorObject.ErrorMessage
-        
-                $auditErrorMessage = $errorObject.ErrorMessage
-            }
-        
-            # If error message empty, fall back on $ex.Exception.Message
-            if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-                $verboseErrorMessage = $ex.Exception.Message
-            }
-            if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-                $auditErrorMessage = $ex.Exception.Message
-            }
-        
-            Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
-            $auditLogs.Add([PSCustomObject]@{
-                    Action  = "CreateAccount"
-                    Message = "Error querying mailbox with UserPrincipalName '$($account.userPrincipalName)'. Error Message: $auditErrorMessage"
-                    IsError = $True
-                })
+        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded"
+        $accessToken = $Response.access_token
 
-            # Clean up error variables
-            Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-            Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
-        }
-        finally {
-            $aRef = $getExoMailbox.aRef
-            $auditLogs += $getExoMailbox.auditLogs
-            $mailbox = $getExoMailbox.mailbox
+        # Connect to Exchange Online in an unattended scripting scenario using an access token.
+        Write-Verbose "Connecting to Exchange Online"
 
-            # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-            $verboseLogs = $getExoMailbox.verboseLogs
-            foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-            $informationLogs = $getExoMailbox.informationLogs
-            foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-            $warningLogs = $getExoMailbox.warningLogs
-            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+        $exchangeSessionParams = @{
+            Organization     = $AADOrganization
+            AppID            = $AADAppID
+            AccessToken      = $accessToken
+            CommandName      = $commands
+            ShowBanner       = $false
+            ShowProgress     = $false
+            TrackPerformance = $false
+            ErrorAction      = "Stop"
         }
+        $exchangeSession = Connect-ExchangeOnline @exchangeSessionParams
+        
+        Write-Information "Successfully connected to Exchange Online"
+    }
+    catch {
+        $ex = $PSItem
+        $errorMessage = Get-ErrorMessage -ErrorObject $ex
+
+        Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+        $auditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Error connecting to Exchange Online. Error Message: $($errorMessage.AuditErrorMessage)"
+                IsError = $True
+            })
+
+        # Skip further actions, as this is a critical error
+        continue
+    }
+
+    # Get Exchange Online Mailbox
+    try {
+        Write-Verbose "Querying EXO mailbox where [$($correlationProperty)] = [$($correlationValue)]"
+            
+        $mailbox = Get-EXOMailbox -Filter "$($correlationProperty) -eq '$($correlationValue)'" -ErrorAction Stop
+
+        if (($mailbox | Measure-Object).Count -eq 0) {
+            throw "Could not find a EXO mailbox where [$($correlationProperty)] = [$($correlationValue)]" 
+        }
+
+        # Set aRef object for use in futher actions
+        $aRef = [PSCustomObject]@{
+            Guid              = $mailbox.Guid
+            UserPrincipalName = $mailbox.UserPrincipalName
+        }
+
+        $auditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Successfully queried and correlated to EXO mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]"
+                IsError = $false
+            })
+    }
+    catch { 
+        $ex = $PSItem
+        $errorMessage = Get-ErrorMessage -ErrorObject $ex
+
+        Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+        $auditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Error querying EXO mailbox where [$($correlationProperty)] = [$($correlationValue)]. Error Message: $($errorMessage.AuditErrorMessage)"
+                IsError = $True
+            })
     }
 
     # Update Mailbox Regional Configuration
-    if (-NOT($auditLogs.IsError -contains $true)) {
-        try {
-            # Update Exchange Online Mailbox
-            $updateExoMailbox = Invoke-Command -Session $remoteSession -ScriptBlock {
-                try {
-                    # Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
-
-                    $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-                    $dryRun = $using:dryRun
-                    $aRef = $using:aRef
-                    $account = $using:account
-                    $mailbox = $using:mailbox
-
-                    # Create array for logging since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands
-                    $verboseLogs = [System.Collections.ArrayList]::new()
-                    $informationLogs = [System.Collections.ArrayList]::new()
-                    $warningLogs = [System.Collections.ArrayList]::new()
-
-                    # Set Mailbox to dutch
-                    $mailboxSplatParams = @{
-                        Identity                  = $($mailbox.Guid)
-                        Language                  = $($account.language)
-                        DateFormat                = $($account.dateFormat)
-                        TimeFormat                = $($account.timeFormat)
-                        TimeZone                  = $($account.timeZone)
-                        LocalizeDefaultFolderName = $($account.localizeDefaultFolderName)
-                    }
-
-                    [Void]$verboseLogs.Add("Updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
-
-                    if ($dryRun -eq $false) {
-                        $updateMailbox = Set-MailboxRegionalConfiguration @mailboxSplatParams -ErrorAction Stop
-
-                        $auditLogs.Add([PSCustomObject]@{
-                                Action  = "CreateAccount"
-                                Message = "Successfully updated mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)"
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        [Void]$warningLogs.Add("DryRun: would update mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json)")
-                    }
-                }
-                catch {
-                    $ex = $PSItem
-                    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObject = Resolve-HTTPError -Error $ex
-                    
-                        $verboseErrorMessage = $errorObject.ErrorMessage
-                    
-                        $auditErrorMessage = $errorObject.ErrorMessage
-                    }
-                    
-                    # If error message empty, fall back on $ex.Exception.Message
-                    if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-                        $verboseErrorMessage = $ex.Exception.Message
-                    }
-                    if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-                        $auditErrorMessage = $ex.Exception.Message
-                    }
-
-                    [Void]$verboseLogs.Add("Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)")
-                    $auditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateAccount"
-                            Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)): $($mailboxSplatParams | ConvertTo-Json). Error Message: $auditErrorMessage"
-                            IsError = $True
-                        })
-
-                    # Clean up error variables
-                    Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-                    Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
-                }
-                finally {
-                    $returnobject = @{
-                        mailbox         = $mailbox
-                        aRef            = $aRef
-                        auditLogs       = $auditLogs
-                        verboseLogs     = $verboseLogs
-                        informationLogs = $informationLogs
-                        warningLogs     = $warningLogs
-                    }
-                    $returnobject.Keys | ForEach-Object { Remove-Variable $_ -ErrorAction SilentlyContinue }
-                    Write-Output $returnobject 
-                }
-            }
+    try {
+        Write-Verbose "Updating mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+    
+        $mailboxSplatParams = @{
+            Identity                  = $($mailbox.Guid)
+            Language                  = $($account.language)
+            DateFormat                = $($account.dateFormat)
+            TimeFormat                = $($account.timeFormat)
+            TimeZone                  = $($account.timeZone)
+            LocalizeDefaultFolderName = $($account.localizeDefaultFolderName)
         }
-        catch {
-            $ex = $PSItem
-            if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                $errorObject = Resolve-HTTPError -Error $ex
-        
-                $verboseErrorMessage = $errorObject.ErrorMessage
-        
-                $auditErrorMessage = $errorObject.ErrorMessage
-            }
-        
-            # If error message empty, fall back on $ex.Exception.Message
-            if ([String]::IsNullOrEmpty($verboseErrorMessage)) {
-                $verboseErrorMessage = $ex.Exception.Message
-            }
-            if ([String]::IsNullOrEmpty($auditErrorMessage)) {
-                $auditErrorMessage = $ex.Exception.Message
-            }
-        
-            Write-Verbose "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($verboseErrorMessage)"
+    
+        if ($dryRun -eq $false) {
+            # See Microsoft Docs for supported params https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
+            $updateMailbox = Set-MailboxRegionalConfiguration @mailboxSplatParams -ErrorAction Stop
+    
             $auditLogs.Add([PSCustomObject]@{
                     Action  = "CreateAccount"
-                    Message = "Error updating mailbox $($aRef.userPrincipalName) ($($aRef.Guid)). Error Message: $auditErrorMessage"
-                    IsError = $True
+                    Message = "Successfully updated mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+                    IsError = $false
                 })
-
-            # Clean up error variables
-            Remove-Variable 'verboseErrorMessage' -ErrorAction SilentlyContinue
-            Remove-Variable 'auditErrorMessage' -ErrorAction SilentlyContinue
         }
-        finally {
-            $aRef = $updateExoMailbox.aRef
-            $auditLogs += $updateExoMailbox.auditLogs
-
-            # Log the data from logging arrays (since the "normal" Write-Information isn't sent to HelloID as another PS session performs the commands)
-            $verboseLogs = $updateExoMailbox.verboseLogs
-            foreach ($verboseLog in $verboseLogs) { Write-Verbose $verboseLog }
-            $informationLogs = $updateExoMailbox.informationLogs
-            foreach ($informationLog in $informationLogs) { Write-Information $informationLog }
-            $warningLogs = $updateExoMailbox.warningLogs
-            foreach ($warningLog in $warningLogs) { Write-Warning $warningLog }
+        else {
+            Write-Warning "DryRun: would update mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
         }
+    }
+    catch {
+        $ex = $PSItem
+        $errorMessage = Get-ErrorMessage -ErrorObject $ex
+    
+        Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+        $auditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Error updating mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
+                IsError = $True
+            })
     }
 }
 finally {
-    Start-Sleep 1
-    if ($null -ne $remoteSession) {
-        Disconnect-PSSession $remoteSession -WarningAction SilentlyContinue | out-null # Suppress Warning: PSSession Connection was created using the EnableNetworkAccess parameter and can only be reconnected from the local computer. # to fix the warning the session must be created with a elevated prompt
-        Write-Verbose "Remote Powershell Session '$($remoteSession.Name)' State: '$($remoteSession.State)' Availability: '$($remoteSession.Availability)'"
-    }
-
     # Check if auditLogs contains errors, if no errors are found, set success to true
     if (-NOT($auditLogs.IsError -contains $true)) {
         $success = $true
     }
-    
+
     # Send results
     $result = [PSCustomObject]@{
         Success          = $success
