@@ -242,6 +242,7 @@ try {
                             Message = "No Group found that matches filter [$($filter)]"
                             IsError = $true
                         })
+                    continue
                 }
                 elseif (($group | Measure-Object).count -gt 1) {
                     $auditLogs.Add([PSCustomObject]@{
@@ -249,6 +250,7 @@ try {
                             Message = "Multiple Groups found that matches filter [$($filter)]. Please correct this so the groups are unique."
                             IsError = $true
                         })
+                    continue
                 }
 
                 # Add group to desired permissions with the id as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
@@ -259,9 +261,6 @@ try {
         # Example: Person Based Logic:
         # Example: location_<locationname>
         # $groupName = "location_" + $p.Location.Name
-
-        # # Sanitize group name, e.g. replace ' - ' with '_' or other sanitization actions 
-        # $groupName = Get-ADSanitizeGroupName -Name $groupName
 
         # # Get group to use objectGuid to avoid name change issues
         # $filter = "IsDirSynced -eq 'False' -and DisplayName -eq '$groupName'"
@@ -294,190 +293,184 @@ try {
 
     #region Execute
     # Compare desired with current permissions and grant permissions
-    if (($desiredPermissions | Measure-Object).Count -ge 1) {
-        foreach ($permission in $desiredPermissions.GetEnumerator()) {
-            $subPermissions.Add([PSCustomObject]@{
-                    DisplayName = $permission.Value
-                    Reference   = [PSCustomObject]@{ Id = $permission.Name }
-                })
+    foreach ($permission in $desiredPermissions.GetEnumerator()) {
+        $subPermissions.Add([PSCustomObject]@{
+                DisplayName = $permission.Value
+                Reference   = [PSCustomObject]@{ Id = $permission.Name }
+            })
 
-            if (-Not $currentPermissions.ContainsKey($permission.Name)) {
-                # Grant Exchange Online Groupmembership
-                try {
-                    Write-Verbose "Granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+        if (-Not $currentPermissions.ContainsKey($permission.Name)) {
+            # Grant Exchange Online Groupmembership
+            try {
+                Write-Verbose "Granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
 
-                    $dgSplatParams = @{
-                        Identity                        = $permission.Name
-                        Member                          = $aRef.Guid
-                        BypassSecurityGroupManagerCheck = $true
-                    }
-
-                    if ($dryRun -eq $false) {
-                        $addDGMember = Add-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
-
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "Successfully granted permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        Write-Warning "DryRun: would grant permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                    }
+                $dgSplatParams = @{
+                    Identity                        = $permission.Name
+                    Member                          = $aRef.Guid
+                    BypassSecurityGroupManagerCheck = $true
                 }
-                catch {
-                    $ex = $PSItem
-                    $errorMessage = Get-ErrorMessage -ErrorObject $ex
+
+                if ($dryRun -eq $false) {
+                    $addDGMember = Add-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Successfully granted permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                            IsError = $false
+                        })
+                }
+                else {
+                    Write-Warning "DryRun: would grant permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                }
+            }
+            catch {
+                $ex = $PSItem
+                $errorMessage = Get-ErrorMessage -ErrorObject $ex
         
-                    Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-                    if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] is already a member of the group [$($permission.Value) ($($permission.Name))]. Skipped grant of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "Error granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
-                                IsError = $True
-                            })
-                    }
+                Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+                if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*") {
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] is already a member of the group [$($permission.Value) ($($permission.Name))]. Skipped grant of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                            IsError = $false
+                        })
+                }
+                else {
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Error granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
+                            IsError = $True
+                        })
                 }
             }
         }
     }
 
     # Compare current with desired permissions and revoke permissions
-    if (($currentPermissions | Measure-Object).Count -ge 1) {
-        $newCurrentPermissions = @{}
-        foreach ($permission in $currentPermissions.GetEnumerator()) {    
-            if (-Not $desiredPermissions.ContainsKey($permission.Name) -AND $permission.Name -ne "No Groups Defined") {
-                # Revoke Exchange Online Groupmembership
-                try {
-                    Write-Verbose "Revoking permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"           
+    $newCurrentPermissions = @{}
+    foreach ($permission in $currentPermissions.GetEnumerator()) {    
+        if (-Not $desiredPermissions.ContainsKey($permission.Name) -AND $permission.Name -ne "No Groups Defined") {
+            # Revoke Exchange Online Groupmembership
+            try {
+                Write-Verbose "Revoking permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"           
 
-                    $dgSplatParams = @{
-                        Identity                        = $permission.Name
-                        Member                          = $aRef.Guid
-                        BypassSecurityGroupManagerCheck = $true
-                    }
-
-                    if ($dryRun -eq $false) {
-                        $addDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
-
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "Successfully revoked permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        Write-Warning "DryRun: would revoke permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                    }
+                $dgSplatParams = @{
+                    Identity                        = $permission.Name
+                    Member                          = $aRef.Guid
+                    BypassSecurityGroupManagerCheck = $true
                 }
-                catch {
-                    $ex = $PSItem
-                    $errorMessage = Get-ErrorMessage -ErrorObject $ex
+
+                if ($dryRun -eq $false) {
+                    $addDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Successfully revoked permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                            IsError = $false
+                        })
+                }
+                else {
+                    Write-Warning "DryRun: would revoke permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                }
+            }
+            catch {
+                $ex = $PSItem
+                $errorMessage = Get-ErrorMessage -ErrorObject $ex
             
-                    Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-                    if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] isn't a member of the group [$($permission.Value) ($($permission.Name))]. Skipped revoke of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                IsError = $false
-                            })
-                    }
-                    elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($permission.Name)*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "Group [$($permission.Value) ($($permission.Name))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                IsError = $false
-                            })
-                    }
-                    elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($aRef.Guid)*") {
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        $auditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
-                                Message = "Error revoking permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
-                                IsError = $True
-                            })
-                    }
+                Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+                if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] isn't a member of the group [$($permission.Value) ($($permission.Name))]. Skipped revoke of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                            IsError = $false
+                        })
+                }
+                elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($permission.Name)*") {
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Group [$($permission.Value) ($($permission.Name))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                            IsError = $false
+                        })
+                }
+                elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($aRef.Guid)*") {
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                            IsError = $false
+                        })
+                }
+                else {
+                    $auditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Error revoking permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
+                            IsError = $True
+                        })
                 }
             }
-            else {
-                $newCurrentPermissions[$permission.Name] = $permission.Value
-            }
+        }
+        else {
+            $newCurrentPermissions[$permission.Name] = $permission.Value
         }
     }
 
-    # Update current permissions
-    # Warning! This example will grant all permissions again! Only uncomment this when this is needed (e.g. force update)
-    if ($o -eq "update") {
-        # Grant all desired permissions, ignoring current permissions
-        if (($desiredPermissions | Measure-Object).Value -ge 1) {
-            foreach ($permission in $desiredPermissions.GetEnumerator()) {
-                $subPermissions.Add([PSCustomObject]@{
-                        DisplayName = $permission.Value
-                        Reference   = [PSCustomObject]@{ Id = $permission.Name }
-                    })
+    # # Update current permissions
+    # # Warning! This example will grant all permissions again! Only uncomment this when this is needed (e.g. force update)
+    # if ($o -eq "update") {
+    #     # Grant all desired permissions, ignoring current permissions
+    #     foreach ($permission in $desiredPermissions.GetEnumerator()) {
+    #         $subPermissions.Add([PSCustomObject]@{
+    #                 DisplayName = $permission.Value
+    #                 Reference   = [PSCustomObject]@{ Id = $permission.Name }
+    #             })
 
-                if (-Not $currentPermissions.ContainsKey($permission.Name)) {
-                    # Grant Exchange Online Groupmembership
-                    try {
-                        Write-Verbose "Granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+    #         if (-Not $currentPermissions.ContainsKey($permission.Name)) {
+    #             # Grant Exchange Online Groupmembership
+    #             try {
+    #                 Write-Verbose "Granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
 
-                        $dgSplatParams = @{
-                            Identity                        = $permission.Name
-                            Member                          = $aRef.Guid
-                            BypassSecurityGroupManagerCheck = $true
-                        }
+    #                 $dgSplatParams = @{
+    #                     Identity                        = $permission.Name
+    #                     Member                          = $aRef.Guid
+    #                     BypassSecurityGroupManagerCheck = $true
+    #                 }
 
-                        if ($dryRun -eq $false) {
-                            $addDGMember = Add-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+    #                 if ($dryRun -eq $false) {
+    #                     $addDGMember = Add-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
 
-                            $auditLogs.Add([PSCustomObject]@{
-                                    # Action  = "" # Optional
-                                    Message = "Successfully granted permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                    IsError = $false
-                                })
-                        }
-                        else {
-                            Write-Warning "DryRun: would grant permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                        }
-                    }
-                    catch {
-                        $ex = $PSItem
-                        $errorMessage = Get-ErrorMessage -ErrorObject $ex
+    #                     $auditLogs.Add([PSCustomObject]@{
+    #                             # Action  = "" # Optional
+    #                             Message = "Successfully granted permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+    #                             IsError = $false
+    #                         })
+    #                 }
+    #                 else {
+    #                     Write-Warning "DryRun: would grant permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+    #                 }
+    #             }
+    #             catch {
+    #                 $ex = $PSItem
+    #                 $errorMessage = Get-ErrorMessage -ErrorObject $ex
         
-                        Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-                        if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*") {
-                            $auditLogs.Add([PSCustomObject]@{
-                                    # Action  = "" # Optional
-                                    Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] is already a member of the group [$($permission.Value) ($($permission.Name))]. Skipped grant of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                                    IsError = $false
-                                }
-                            )
-                        }
-                        else {
-                            $auditLogs.Add([PSCustomObject]@{
-                                    # Action  = "" # Optional
-                                    Message = "Error granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
-                                    IsError = $True
-                                })
-                        }
-                    }
-                }
-            }
-        }
-    }
+    #                 Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+    #                 if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*") {
+    #                     $auditLogs.Add([PSCustomObject]@{
+    #                             # Action  = "" # Optional
+    #                             Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] is already a member of the group [$($permission.Value) ($($permission.Name))]. Skipped grant of permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+    #                             IsError = $false
+    #                         }
+    #                     )
+    #                 }
+    #                 else {
+    #                     $auditLogs.Add([PSCustomObject]@{
+    #                             # Action  = "" # Optional
+    #                             Message = "Error granting permission to group [$($permission.Value) ($($permission.Name))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
+    #                             IsError = $True
+    #                         })
+    #                 }
+    #             }
+    #         }
+    #     }
+    # }
 
     # Handle case of empty defined dynamic permissions.  Without this the entitlement will error.
     if ($o -match "update|grant" -AND $subPermissions.count -eq 0) {
