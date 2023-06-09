@@ -236,7 +236,7 @@ try {
         if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
             $auditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
-                    Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] isn't a member of the group $($pRef.Name) ($($pRef.id)). Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                    Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] isn't a member of the group [$($pRef.Name) ($($pRef.id))]. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
                 }
             )
@@ -244,7 +244,7 @@ try {
         elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($pRef.id)*") {
             $auditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
-                    Message = "Group $($pRef.Name) ($($pRef.id)) couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                    Message = "Group [$($pRef.Name) ($($pRef.id))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
                 }
             )
@@ -252,7 +252,7 @@ try {
         elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($aRef.Guid)*") {
             $auditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
-                    Message = "User[$($aRef.UserPrincipalName) ($($aRef.Guid))]couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                    Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
                 }
             )
