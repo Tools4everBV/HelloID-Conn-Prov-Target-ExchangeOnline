@@ -1,6 +1,6 @@
 | :warning: Warning |
 |:---------------------------|
-| As of the latest release of 1.1.1 we have removed the script templates for using username + password to authenticate to Exchange Online. It is our and Microsoft's advice to use an App registration and certifcate based authentication instead.        |
+| This connector is written and tested with the EXO module v3.1. Please make sure you have installed, at least, this version. |
 
 | :information_source: Information |
 |:---------------------------|
@@ -14,11 +14,7 @@
 ## Versioning
 | Version | Description | Date |
 | - | - | - |
-| 1.2.1   | Updated to error handling to be country/language independent | 2022/12/21  |
-| 1.2.0   | Added seperate sessions for actions | 2022/11/28  |
-| 1.1.1   | Updated logging and performance | 2022/09/20  |
-| 1.0.2   | Added examples to connect using a certificate | 2022/07/25  |
-| 1.0.1   | Updated to only import the modules we use for performance increase | 2022/07/04  |
+| 2.0.0   | Use of Access Token to authenticate and no longer use additional PS sessions | 2023/06/09  |
 | 1.0.0   | Initial release | 2022/03/30  |
 
 <!-- TABLE OF CONTENTS -->
@@ -31,8 +27,6 @@
 - [Creating the Azure AD App Registration and certificate](#creating-the-azure-ad-app-registration-and-certificate)
   - [Application Registration](#application-registration)
   - [Configuring App Permissions](#configuring-app-permissions)
-  - [Generate a self-signed certificate](#generate-a-self-signed-certificate)
-  - [Attach the certificate to the Azure AD application](#attach-the-certificate-to-the-azure-ad-application)
   - [Assign Azure AD roles to the application](#assign-azure-ad-roles-to-the-application)
   - [Authentication and Authorization](#authentication-and-authorization)
   - [Connection settings](#connection-settings)
@@ -42,8 +36,6 @@
 ## Requirements
 - Installed and available [Microsoft Exchange Online PowerShell V2 module](https://docs.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
 - Required to run **On-Premises** since it is not allowed to import a module with the Cloud Agent.
-- **Concurrent sessions** in HelloID set to a **maximum of 1**! If this is any higher than 1, this may cause errors, since Exchange only support a maximum of 3 sessions per minute.
-- Since we create a Remote PS Session on the agent server (which will contain the Exchange Session, to avoid the Exchange limit of 3 sessions per minute), the service account has to be a member of the group “**Remote Management Users**”.
 - An __App Registration in Azure AD__ is required. __Please follow the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#step-3-generate-a-self-signed-certificate:~:text=Appendix-,Step%201%3A%20Register%20the%20application%20in%20Azure%20AD,-Note) as reference to configure the App Registration correctly__
 
 ## Introduction
@@ -86,33 +78,6 @@ For this connector the following permissions are used as <b>Application permissi
 
 To grant admin consent to our application press the “<b>Grant admin consent for TENANT</b>” button.
 
-### Generate a self-signed certificate
-For app-only authentication in Azure AD, you typically use a certificate to request access. Anyone who has the certificate and its private key can use the app, and the permissions granted to the app.
-Create and configure a self-signed X.509 certificate, which will be used to authenticate your Application against Azure AD, while requesting the app-only access token.
-The fastest and recommened way to do so is by using the script below:
-
-```
-$dnsName = "contoso.org"
-$password = "P@ssw0Rd1234"
-
-# Create certificate
-$mycert = New-SelfSignedCertificate -DnsName $dnsName -CertStoreLocation "cert:\CurrentUser\My" -NotAfter (Get-Date).AddYears(1) -KeySpec KeyExchange
-
-# Export certificate to .pfx file
-$mycert | Export-PfxCertificate -FilePath mycert.pfx -Password $(ConvertTo-SecureString -String $password -AsPlainText -Force)
-
-# Export certificate to .cer file
-$mycert | Export-Certificate -FilePath mycert.cer
-```
-
-### Attach the certificate to the Azure AD application
-To attach your certificate to your application, navigate to <b>Azure Portal > Azure Active Directory > App Registrations</b>.
-Select the application we created before, and select “<b>Certificates & secrets</b>”.
-On the Certificates & secrets page that opens, click the “<b>Upload certificate</b>” button.
-In the dialog that opens, browse to the self-signed certificate (.cer file) that we created before.
-When you're finished, click Add.
-The certificate is now shown in the Certificates section.
-
 ### Assign Azure AD roles to the application
 Azure AD has more than 50 admin roles available. The Global Administrator and Exchange Administrator roles provide the required permissions for any task in Exchange Online PowerShell. For general instructions about assigning roles in Azure AD, see [View and assign administrator roles in Azure Active Directory](https://learn.microsoft.com/en-us/azure/active-directory/roles/manage-roles-portal).
 
@@ -124,15 +89,17 @@ When you're finished, click Add.
 Back on the Assignments page, verify that the app has been assigned to the role.
 
 ### Authentication and Authorization
-There are multiple ways to authenticate to Exchange Online using a certificate with each has its own pros and cons, in this example we are using the option where we connect using a certificate thumbprint and therefore the Certificate has to be locally installed.
+There are multiple ways to authenticate to the Graph API with each has its own pros and cons, in this example we are using the Authorization Code grant type.
 
 *	First we need to get the <b>Client ID</b>, go to the <b>Azure Portal > Azure Active Directory > App Registrations</b>.
 *	Select your application and copy the Application (client) ID value.
-*	After we have the Client ID we also have to get the <b>Certificate Thumbprint</b>.
+*	After we have the Client ID we also have to create a <b>Client Secret</b>.
 *	From the Azure Portal, go to <b>Azure Active Directory > App Registrations</b>.
 *	Select the application we have created before, and select "<b>Certificates and Secrets</b>". 
-*	Under “Certificates” copy the value of the “<b>Thumbprint</b>”.
-*	At last we need to <b>install the certificate on the HelloID Agent server</b>. This has to be locally installed since we work with the thumbprint only and not the certificate itself.
+*	Under “Client Secrets” click on the “<b>New Client Secret</b>” button to create a new secret.
+*	Provide a logical name for your secret in the Description field, and select the expiration date for your secret.
+*	It's IMPORTANT to copy the newly generated client secret, because you cannot see the value anymore after you close the page.
+*	At last we need to get the <b>Tenant ID</b>. This can be found in the Azure Portal by going to <b>Azure Active Directory > Overview</b>.
 
 ### Connection settings
 The following settings are required to connect.
@@ -140,8 +107,9 @@ The following settings are required to connect.
 | Setting     | Description |
 | ------------ | ----------- |
 | Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists __Please note: This has to be the .onmicrosoft domain name__ |
+| Azure AD Tenant ID | Id of the Azure tenant |
 | Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions. __Please follow the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#step-3-generate-a-self-signed-certificate:~:text=Appendix-,Step%201%3A%20Register%20the%20application%20in%20Azure%20AD,-Note) as reference to configure the App Registration correctly__  |
-| Azure AD Certificate Thumbprint | The thumbprint of the certificate that is linked to the Azure AD App Registration __Please note: This certificate has to be locally installed__|
+| Azure AD App Secret | Secret of the Azure app |
 
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012518799-How-to-add-a-target-system) pages_
