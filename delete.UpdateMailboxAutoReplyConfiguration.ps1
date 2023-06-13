@@ -50,7 +50,7 @@ $account = [PSCustomObject]@{
 }
 
 # Define account properties as required
-$requiredConfigurationFields = @("AutoReplyState", "InternalMessage", "ExternalMessage")
+$requiredAccountFields = @("AutoReplyState", "InternalMessage", "ExternalMessage")
 
 
 #region functions
@@ -142,9 +142,9 @@ try {
             Write-Warning "Required account object field [$requiredAccountField] is missing"
         }
 
-        if ([String]::IsNullOrEmpty($account.$requiredAccountFields)) {
+        if ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
             $incompleteAccount = $true
-            Write-Warning "Required account object field [$requiredAccountFields] has a null or empty value"
+            Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
         }
     }
 
@@ -267,7 +267,7 @@ try {
 
     # Update Mailbox AutoReply Configuration
     try {
-        Write-Verbose "Updating mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+        Write-Verbose "Updating autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
 
         # Get Mailbox "Calendar" folder name
         $mailboxFolderId = Get-MailboxFolderStatistics -Identity $mailbox.Guid -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar' } | Select-Object Name
@@ -284,12 +284,12 @@ try {
 
             $auditLogs.Add([PSCustomObject]@{
                     Action  = "CreateAccount"
-                    Message = "Successfully updated mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+                    Message = "Successfully updated autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
                     IsError = $false
                 })
         }
         else {
-            Write-Warning "DryRun: would update mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+            Write-Warning "DryRun: would update autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
         }
     }
     catch {
@@ -299,7 +299,7 @@ try {
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
         $auditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
-                Message = "Error updating mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
+                Message = "Error updating autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
     }

@@ -43,6 +43,7 @@ $correlationValue = $p.Accounts.MicrosoftAzureAD.userPrincipalName # Has to matc
 
 # Change mapping here
 $account = [PSCustomObject]@{
+    # Timezone
     language                  = 'nl-NL'
     dateFormat                = 'dd-MM-yy'
     timeFormat                = "H:mm" 
@@ -51,7 +52,7 @@ $account = [PSCustomObject]@{
 }
 
 # Define account properties as required
-$requiredConfigurationFields = @("language", "dateFormat", "timeFormat", "timeZone", "localizeDefaultFolderName")
+$requiredAccountFields = @("language", "dateFormat", "timeFormat", "timeZone", "localizeDefaultFolderName")
 
 #region functions
 function Resolve-HTTPError {
@@ -157,9 +158,9 @@ try {
             Write-Warning "Required account object field [$requiredAccountField] is missing"
         }
 
-        if ([String]::IsNullOrEmpty($account.$requiredAccountFields)) {
+        if ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
             $incompleteAccount = $true
-            Write-Warning "Required account object field [$requiredAccountFields] has a null or empty value"
+            Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
         }
     }
 
@@ -288,8 +289,8 @@ try {
 
     # Update Mailbox Regional Configuration
     try {
-        Write-Verbose "Updating mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
-    
+        Write-Verbose "Updating regional configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+
         $mailboxSplatParams = @{
             Identity                  = $($mailbox.Guid)
             Language                  = $($account.language)
@@ -302,25 +303,25 @@ try {
         if ($dryRun -eq $false) {
             # See Microsoft Docs for supported params https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
             $updateMailbox = Set-MailboxRegionalConfiguration @mailboxSplatParams -ErrorAction Stop
-    
+
             $auditLogs.Add([PSCustomObject]@{
                     Action  = "CreateAccount"
-                    Message = "Successfully updated mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+                    Message = "Successfully updated regional configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
                     IsError = $false
                 })
         }
         else {
-            Write-Warning "DryRun: would update mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+            Write-Warning "DryRun: would update regional configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
         }
     }
     catch {
         $ex = $PSItem
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
-    
+
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
         $auditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
-                Message = "Error updating mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
+                Message = "Error updating regional configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
     }
