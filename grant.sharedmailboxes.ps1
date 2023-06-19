@@ -37,6 +37,7 @@ $commands = @(
     "Get-User" # Always required
     , "Add-MailboxPermission"
     , "Add-RecipientPermission"
+    , "Set-Mailbox"
 )
 
 #region functions
