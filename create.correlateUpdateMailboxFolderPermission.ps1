@@ -48,7 +48,7 @@ $account = [PSCustomObject]@{
 }
 
 # Define account properties as required
-$requiredAccountFields = @("mailboxFolderUser", "mailboxFolderAccessRight", "language", "dateFormat", "timeFormat", "timeZone", "localizeDefaultFolderName")
+$requiredAccountFields = @("mailboxFolderUser", "mailboxFolderAccessRight")
 
 #region functions
 function Resolve-HTTPError {
@@ -288,10 +288,10 @@ try {
         Write-Verbose "Updating folder permissions for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
 
         # Get Mailbox "Calendar" folder name
-        $mailboxFolderId = Get-MailboxFolderStatistics -Identity $mailbox.Guid -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar' } | Select-Object Name
+        $mailboxFolderName = (Get-MailboxFolderStatistics -Identity $mailbox.Guid -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar' }).Name
 
         $mailboxSplatParams = @{
-            Identity     = "$($mailbox.UserPrincipalName):\$($mailboxFolderId)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
+            Identity     = "$($mailbox.UserPrincipalName):\$($mailboxFolderName)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
             User         = $account.mailboxFolderUser
             AccessRights = $account.mailboxFolderAccessRight
         } 
