@@ -218,11 +218,11 @@ try {
                         User            = $aRef.Guid
                         AccessRights    = 'FullAccess'
                         InheritanceType = 'All'
-                        AutoMapping     = $AutoMapping
+                        Confirm         = $false
                     } 
 
                     if ($dryRun -eq $false) {
-                        $addFullAccessPermission = Add-MailboxPermission @FullAccessPermissionSplatParams -ErrorAction Stop
+                        $removeFullAccessPermission = Remove-MailboxPermission @FullAccessPermissionSplatParams -ErrorAction Stop
 
                         $auditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
@@ -277,7 +277,7 @@ try {
                     } 
 
                     if ($dryRun -eq $false) {
-                        $addSendAsPermission = Add-RecipientPermission @sendAsPermissionSplatParams -ErrorAction Stop
+                        $removeSendAsPermission = Remove-RecipientPermission @sendAsPermissionSplatParams -ErrorAction Stop
 
                         $auditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
@@ -326,14 +326,13 @@ try {
 
                     # Can only be assigned to mailbox (so just a user account isn't sufficient, there has to be a mailbox for the user)
                     $SendonBehalfPermissionSplatParams = @{
-                        Identity             = $pRef.id
-                        revokeSendOnBehalfTo = @{add = "$($aRef.Guid)" }
-                        Confirm              = $false
-                    } 
-
+                        Identity            = $pRef.id
+                        GrantSendOnBehalfTo = @{remove = "$($aRef.Guid)" }
+                        Confirm             = $false
+                    }
                     
                     if ($dryRun -eq $false) {
-                        $addSendonBehalfPermission = Set-Mailbox @SendonBehalfPermissionSplatParams -ErrorAction Stop
+                        $removeSendonBehalfPermission = Set-Mailbox @SendonBehalfPermissionSplatParams -ErrorAction Stop
 
                         $auditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
