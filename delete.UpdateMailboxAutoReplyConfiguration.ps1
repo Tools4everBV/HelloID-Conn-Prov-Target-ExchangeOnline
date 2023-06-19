@@ -33,8 +33,7 @@ $AADAppSecret = $c.AzureADAppSecret
 
 # PowerShell commands to import
 $commands = @(
-    "Get-User" # Always required
-    , "Get-EXOMailbox"
+    "Get-EXOMailbox"
     , "Set-MailboxAutoReplyConfiguration"
 )
 

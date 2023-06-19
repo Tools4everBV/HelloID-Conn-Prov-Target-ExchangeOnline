@@ -34,8 +34,7 @@ $AADAppSecret = $c.AzureADAppSecret
 
 # PowerShell commands to import
 $commands = @(
-    "Get-User" # Always required
-    , "Add-DistributionGroupMember"
+    "Add-DistributionGroupMember"
 )
 
 #region functions
