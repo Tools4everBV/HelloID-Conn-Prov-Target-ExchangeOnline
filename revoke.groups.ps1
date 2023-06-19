@@ -216,7 +216,7 @@ try {
         }
 
         if ($dryRun -eq $false) {
-            $addDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+            $removeDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
 
             $auditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
