@@ -30,8 +30,7 @@ $WarningPreference = "Continue"
 # Define configuration properties as required
 $requiredConfigurationFields = @("AzureADOrganization", "AzureADTenantId", "AzureADAppId", "AzureADAppSecret")
 
-# Used to connect to Exchange Online in an unattended scripting scenario using a certificate.
-# Follow the Microsoft Docs on how to set up the Azure App Registration: https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps
+# Used to connect to Exchange Online in an unattended scripting scenario using an App ID and App Secret to create an Access Token.
 $AADOrganization = $c.AzureADOrganization
 $AADTenantId = $c.AzureADTenantId
 $AADAppID = $c.AzureADAppId
