@@ -269,9 +269,6 @@ try {
     try {
         Write-Verbose "Updating autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
 
-        # Get Mailbox "Calendar" folder name
-        $mailboxFolderId = Get-MailboxFolderStatistics -Identity $mailbox.Guid -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar' } | Select-Object Name
-
         $mailboxSplatParams = @{
             Identity        = $($aRef.Guid)
             AutoReplyState  = $($account.AutoReplyState)
