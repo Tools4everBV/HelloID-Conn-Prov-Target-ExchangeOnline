@@ -1,6 +1,6 @@
 | :warning: Warning |
 |:---------------------------|
-| This connector is written and tested with the EXO module v3.1. Please make sure you have installed, at least, this version. |
+| This connector is written and tested for the EXO module v3.1. Please make sure you have installed, at least, this version. |
 
 | :information_source: Information |
 |:---------------------------|
@@ -23,7 +23,7 @@
 - [Table of Contents](#table-of-contents)
 - [Requirements](#requirements)
 - [Introduction](#introduction)
-- [Installing the Microsoft Exchange Online PowerShell V2 module](#installing-the-microsoft-exchange-online-powershell-v2-module)
+- [Installing the Microsoft Exchange Online PowerShell V3.1 module](#installing-the-microsoft-exchange-online-powershell-v31-module)
 - [Creating the Azure AD App Registration and certificate](#creating-the-azure-ad-app-registration-and-certificate)
   - [Application Registration](#application-registration)
   - [Configuring App Permissions](#configuring-app-permissions)
@@ -34,25 +34,25 @@
 - [HelloID Docs](#helloid-docs)
 
 ## Requirements
-- Installed and available [Microsoft Exchange Online PowerShell V2 module](https://docs.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
+- Installed and available **Microsoft Exchange Online PowerShell V3.1 module**. Please see the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps) for more information. The download [can be found here](https://www.powershellgallery.com/packages/ExchangeOnlineManagement/3.0.0).
 - Required to run **On-Premises** since it is not allowed to import a module with the Cloud Agent.
-- An __App Registration in Azure AD__ is required. __Please follow the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#step-3-generate-a-self-signed-certificate:~:text=Appendix-,Step%201%3A%20Register%20the%20application%20in%20Azure%20AD,-Note) as reference to configure the App Registration correctly__
+- An **App Registration in Azure AD** is required.
 
 ## Introduction
-For this connector we have the option to correlate to existing Exchange Online (Office 365) users and provision groupmemberships and/or permission(s) to a shared mailbox.
-  >__Only Exchange and Cloud-only groups are supported__
+For this connector we have the option to correlate to and/or update Exchange Online (Office 365) users and/or mailboxes and provision permission(s) to a group and/or shared mailbox.
+  >**Only Exchange and Cloud-only groups are supported**
 
-If you want to create Exchange Online (Office 365) users, please use the built-in Microsoft (Azure) Active Directory target system. If a user exists in Azure AD, Microsoft will automatically sync this to Exchange Online (Office 365).
+If you want to create Exchange Online (Office 365) users and/or mailboxes, please use the built-in Microsoft (Azure) Active Directory target system. Or setup Business Rules to provision an Office 365 license group, Microsoft will automatically provision a mailbox for this user.
 
 <!-- GETTING STARTED -->
-## Installing the Microsoft Exchange Online PowerShell V2 module
-By using this connector you will have the ability to manage groupmemberships and/or permission(s) to a shared mailbox.
-Since we use the cmdlets from the Microsoft Exchange Online PowerShell V2 module, it is required this module is installed and available for the service account.
-Please follow the [Microsoft documentation on how to install the module](https://docs.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps#install-the-exo-v2-module). 
+## Installing the Microsoft Exchange Online PowerShell V3.1 module
+Since we use the cmdlets from the Microsoft Exchange Online PowerShell module, it is required this module is installed and available for the service account.
+Please follow the [Microsoft documentation on how to install the module](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps#install-and-maintain-the-exchange-online-powershell-module). 
 
 
 ## Creating the Azure AD App Registration and certificate
-> _The steps below are based on the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps) as of the moment of release. The Microsoft documentation should always be leading and susceptible to change. The steps below might not reflect those changes._
+> _The steps below are based on the [Microsoft documentation](https://docs.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps) as of the moment of release. The Microsoft documentation should always be leading and is susceptible to change. The steps below might not reflect those changes._
+> >**Please note that our steps differ from the current documentation as we use Access Token Based Authentication instead of Certificate Based Authentication**
 
 ### Application Registration
 The first step is to register a new <b>Azure Active Directory Application</b>. The application is used to connect to Exchange and to manage permissions.
@@ -68,25 +68,24 @@ Some key items regarding the application are the Application ID (which is the Cl
 ### Configuring App Permissions
 The [Microsoft Graph documentation](https://docs.microsoft.com/en-us/graph) provides details on which permission are required for each permission type.
 
-To assign your application the right permissions, navigate to <b>Azure Portal > Azure Active Directory > App Registrations</b>.
-Select the application we created before, and select “<b>API Permissions</b>” or “<b>View API Permissions</b>”.
-To assign a new permission to your application, click the “<b>Add a permission</b>” button.
-From the “<b>Request API Permissions</b>” screen click “<b>Office 365 Exchange Online</b>”.
-For this connector the following permissions are used as <b>Application permissions</b>:
-*	Manage Exchange As Application <b><i>Exchange.ManageAsApp</i></b>
-> _The Office 365 Exchange Online might not be a selectable API. In thise case, select "APIs my organization uses" and search here for "Office 365 Exchange Online"__
-
-To grant admin consent to our application press the “<b>Grant admin consent for TENANT</b>” button.
+* To assign your application the right permissions, navigate to <b>Azure Portal > Azure Active Directory > App Registrations</b>.
+* Select the application we created before, and select “<b>API Permissions</b>” or “<b>View API Permissions</b>”.
+* To assign a new permission to your application, click the “<b>Add a permission</b>” button.
+* From the “<b>Request API Permissions</b>” screen click “<b>Office 365 Exchange Online</b>”.
+  > _The Office 365 Exchange Online might not be a selectable API. In thise case, select "APIs my organization uses" and search here for "Office 365 Exchange Online"__
+* For this connector the following permissions are used as <b>Application permissions</b>:
+  *	Manage Exchange As Application <b><i>Exchange.ManageAsApp</i></b>
+* To grant admin consent to our application press the “<b>Grant admin consent for TENANT</b>” button.
 
 ### Assign Azure AD roles to the application
 Azure AD has more than 50 admin roles available. The Global Administrator and Exchange Administrator roles provide the required permissions for any task in Exchange Online PowerShell. For general instructions about assigning roles in Azure AD, see [View and assign administrator roles in Azure Active Directory](https://learn.microsoft.com/en-us/azure/active-directory/roles/manage-roles-portal).
 
-To assign the role(s) to your application, navigate to <b>Azure Portal > Azure Active Directory > Roles and administrators</b>.
-On the Roles and administrators page that opens, find and select one of the supported roles e.g. “<b>Exchange Administrator</b>” by clicking on the name of the role (not the check box) in the results.
-On the Assignments page that opens, click the “<b>Add assignments</b>” button.
-In the Add assignments flyout that opens, find and select the app that we created before.
-When you're finished, click Add.
-Back on the Assignments page, verify that the app has been assigned to the role.
+* To assign the role(s) to your application, navigate to <b>Azure Portal > Azure Active Directory > Roles and administrators</b>.
+* On the Roles and administrators page that opens, find and select one of the supported roles e.g. “<b>Exchange Administrator</b>” by clicking on the name of the role (not the check box) in the results.
+* On the Assignments page that opens, click the “<b>Add assignments</b>” button.
+* In the Add assignments flyout that opens, **find and select the app that we created before**.
+* When you're finished, click **Add**.
+* Back on the Assignments page, **verify that the app has been assigned to the role**.
 
 ### Authentication and Authorization
 There are multiple ways to authenticate to the Graph API with each has its own pros and cons, in this example we are using the Authorization Code grant type.
@@ -106,10 +105,10 @@ The following settings are required to connect.
 
 | Setting     | Description |
 | ------------ | ----------- |
-| Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists __Please note: This has to be the .onmicrosoft domain name__ |
+| Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists. **Please note: This has to be the .onmicrosoft domain name** |
 | Azure AD Tenant ID | Id of the Azure tenant |
-| Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions. __Please follow the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#step-3-generate-a-self-signed-certificate:~:text=Appendix-,Step%201%3A%20Register%20the%20application%20in%20Azure%20AD,-Note) as reference to configure the App Registration correctly__  |
-| Azure AD App Secret | Secret of the Azure app |
+| Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions |
+| Azure AD App Secret | Secret of the Azure AD App Registration with Exchange Permissions |
 
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012518799-How-to-add-a-target-system) pages_
