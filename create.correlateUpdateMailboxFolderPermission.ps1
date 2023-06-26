@@ -170,12 +170,12 @@ try {
         $moduleName = "ExchangeOnlineManagement"
 
         # If module is imported say that and do nothing
-        if (Get-Module | Where-Object { $_.Name -eq $ModuleName }) {
+        if (Get-Module -Verbose:$false | Where-Object { $_.Name -eq $ModuleName }) {
             Write-Verbose "Module [$ModuleName] is already imported."
         }
         else {
             # If module is not imported, but available on disk then import
-            if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $ModuleName }) {
+            if (Get-Module -ListAvailable -Verbose:$false | Where-Object { $_.Name -eq $ModuleName }) {
                 $module = Import-Module $ModuleName -Cmdlet $commands -Verbose:$false
                 Write-Verbose "Imported module [$ModuleName]"
             }
