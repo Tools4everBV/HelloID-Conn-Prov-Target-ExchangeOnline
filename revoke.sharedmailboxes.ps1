@@ -164,7 +164,7 @@ try {
         $authUri = $baseUri + "$AADTenantId/oauth2/token"
         
         $body = @{
-            revoke_type   = "client_credentials"
+            grant_type   = "client_credentials"
             client_id     = "$AADAppID"
             client_secret = "$AADAppSecret"
             resource      = "https://outlook.office365.com"
