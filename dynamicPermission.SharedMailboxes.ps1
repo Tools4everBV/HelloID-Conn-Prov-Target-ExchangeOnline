@@ -46,6 +46,7 @@ $subPermissions = New-Object Collections.Generic.List[PSCustomObject]
 
 # PowerShell commands to import
 $commands = @(
+    "Get-User"
     , "Get-EXOMailbox"
     , "Add-MailboxPermission"
     , "Add-RecipientPermission"
