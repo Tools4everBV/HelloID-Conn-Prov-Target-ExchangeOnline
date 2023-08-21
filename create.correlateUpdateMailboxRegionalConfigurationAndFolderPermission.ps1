@@ -128,8 +128,7 @@ try {
             $incompleteConfiguration = $true
             Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
         }
-
-        if ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
             $incompleteConfiguration = $true
             Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
         }
@@ -161,8 +160,7 @@ try {
             $incompleteAccount = $true
             Write-Warning "Required account object field [$requiredAccountField] is missing"
         }
-
-        if ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
+        elseif ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
             $incompleteAccount = $true
             Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
         }
@@ -222,7 +220,7 @@ try {
             resource      = "https://outlook.office365.com"
         }
         
-        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded"
+        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing $true
         $accessToken = $Response.access_token
 
         # Connect to Exchange Online in an unattended scripting scenario using an access token.

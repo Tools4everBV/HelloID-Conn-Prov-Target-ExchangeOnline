@@ -43,9 +43,9 @@ $commands = @(
 $primaryManagerName = ($($p.PrimaryManager.DisplayName) -replace " \($($p.PrimaryManager.ExternalId)\)", '')
 $primaryManagerEmail = $($p.PrimaryManager.Email)
 $account = [PSCustomObject]@{
-    AutoReplyState    = 'Enabled'
-    InternalMessage   = "Dear colleague, thank you for your message. I am no longer employed at Enyoi. Your mail will be forwarded to $($primaryManagerName)"
-    ExternalMessage   = "Dear Sir, Madam, Thank you for your email. I am no longer employed at Enyoi. Your mail is automatically forwarded to my colleague $($primaryManagerName) with mail address $($primaryManagerEmail)"
+    AutoReplyState  = 'Enabled'
+    InternalMessage = "Dear colleague, thank you for your message. I am no longer employed at Enyoi. Your mail will be forwarded to $($primaryManagerName)"
+    ExternalMessage = "Dear Sir, Madam, Thank you for your email. I am no longer employed at Enyoi. Your mail is automatically forwarded to my colleague $($primaryManagerName) with mail address $($primaryManagerEmail)"
 }
 
 # Define account properties as required
@@ -122,8 +122,7 @@ try {
             $incompleteConfiguration = $true
             Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
         }
-
-        if ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
             $incompleteConfiguration = $true
             Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
         }
@@ -140,8 +139,7 @@ try {
             $incompleteAccount = $true
             Write-Warning "Required account object field [$requiredAccountField] is missing"
         }
-
-        if ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
+        elseif ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
             $incompleteAccount = $true
             Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
         }
@@ -201,7 +199,7 @@ try {
             resource      = "https://outlook.office365.com"
         }
         
-        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded"
+        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing $true
         $accessToken = $Response.access_token
 
         # Connect to Exchange Online in an unattended scripting scenario using an access token.

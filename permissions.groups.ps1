@@ -101,8 +101,7 @@ try {
             $incompleteConfiguration = $true
             Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
         }
-
-        if ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
             $incompleteConfiguration = $true
             Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
         }
