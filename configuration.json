@@ -11,6 +11,17 @@
     }
   },
   {
+    "key": "AzureADTenantId",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Azure AD Tenant Id",
+      "placeholder": "1234567-2538-4922-80e2-b890abcde",
+      "description": "The ID of the Tenant in Azure",
+      "required": true
+    }
+  },
+  {
     "key": "AzureADAppId",
     "type": "input",
     "defaultValue": "",
@@ -22,13 +33,13 @@
     }
   },
   {
-    "key": "AzureADCertificateThumbprint",
+    "key": "AzureADAppSecret",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD Certificate Thumbprint",
-      "placeholder": "12345678907FC55D11D21516DB4BE0057ABCDEFG",
-      "description": "The Thumbprint of the Certificate linked to the specified App Registration",
+      "label": "Azure AD App Secret",
+      "placeholder": "1234567-2538-4922-80e2-b890abcde",
+      "description": "The Secret of the App Registration in Azure with the Exchange permissions to the specfied organization",
       "required": true
     }
   },
