@@ -220,7 +220,7 @@ try {
             resource      = "https://outlook.office365.com"
         }
         
-        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing $true
+        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing:$true
         $accessToken = $Response.access_token
 
         # Connect to Exchange Online in an unattended scripting scenario using an access token.
