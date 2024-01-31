@@ -1,26 +1,26 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Delete-Update-MailboxAutoReplyConfiguration
 #
-# Version: 2.0.0
+# Version: 3.0.0 | new-powershell-connector
 #####################################################
-# Initialize default values
-$c = $configuration | ConvertFrom-Json
-$p = $person | ConvertFrom-Json
-# The accountReference object contains the Identification object provided in the account create call
-$aRef = $accountReference | ConvertFrom-Json
-$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Set to false at start, at the end, only when no error occurs it is set to true
+$outputContext.Success = $false 
+
+# The accountReference object contains the Identification object provided in the create account call
+$aRef = $actionContext.References.Account 
+
+# Initialize default values
+$c = $actionContext.Configuration
 
 # Set debug logging
 switch ($($c.isDebug)) {
     $true { $VerbosePreference = "Continue" }
     $false { $VerbosePreference = "SilentlyContinue" }
 }
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
 
 # Define configuration properties as required
 $requiredConfigurationFields = @("AzureADOrganization", "AzureADTenantId", "AzureADAppId", "AzureADAppSecret")
@@ -38,19 +38,8 @@ $commands = @(
     , "Set-MailboxAutoReplyConfiguration"
 )
 
-# Change mapping here
-# Remove externalId from manager name
-$primaryManagerName = ($($p.PrimaryManager.DisplayName) -replace " \($($p.PrimaryManager.ExternalId)\)", '')
-$primaryManagerEmail = $($p.PrimaryManager.Email)
-$account = [PSCustomObject]@{
-    AutoReplyState  = 'Enabled'
-    InternalMessage = "Dear colleague, thank you for your message. I am no longer employed at Enyoi. Your mail will be forwarded to $($primaryManagerName)"
-    ExternalMessage = "Dear Sir, Madam, Thank you for your email. I am no longer employed at Enyoi. Your mail is automatically forwarded to my colleague $($primaryManagerName) with mail address $($primaryManagerEmail)"
-}
-
 # Define account properties as required
 $requiredAccountFields = @("AutoReplyState", "InternalMessage", "ExternalMessage")
-
 
 #region functions
 function Resolve-HTTPError {
@@ -115,40 +104,60 @@ function Get-ErrorMessage {
 #endregion functions
 
 try {
-    # Check if required fields are available in configuration object
-    $incompleteConfiguration = $false
-    foreach ($requiredConfigurationField in $requiredConfigurationFields) {
-        if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+    try {
+        # Verify if [aRef] has a value
+        if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {      
+            throw 'The account reference could not be found'
         }
-        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+
+        # Check if required fields are available in configuration object
+        $incompleteConfiguration = $false
+        foreach ($requiredConfigurationField in $requiredConfigurationFields) {
+            if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+            }
+            elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+            }
         }
-    }
 
-    if ($incompleteConfiguration -eq $true) {
-        throw "Configuration object incomplete, cannot continue."
-    }
-
-    # Check if required fields are available in account object
-    $incompleteAccount = $false
-    foreach ($requiredAccountField in $requiredAccountFields) {
-        if ($requiredAccountField -notin $account.PsObject.Properties.Name) {
-            $incompleteAccount = $true
-            Write-Warning "Required account object field [$requiredAccountField] is missing"
+        if ($incompleteConfiguration -eq $true) {
+            throw "Configuration object incomplete, cannot continue."
         }
-        elseif ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
-            $incompleteAccount = $true
-            Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
+
+        $account = $actionContext.Data
+
+        # Check if required fields are available in account object
+        $incompleteAccount = $false
+        foreach ($requiredAccountField in $requiredAccountFields) {
+            if ($requiredAccountField -notin $account.PsObject.Properties.Name) {
+                $incompleteAccount = $true
+                Write-Warning "Required account object field [$requiredAccountField] is missing"
+            }
+            elseif ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
+                $incompleteAccount = $true
+                Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
+            }
         }
-    }
+    
+        if ($incompleteAccount -eq $true) {
+            throw "Account object incomplete, cannot continue."
+        }
 
-    if ($incompleteAccount -eq $true) {
-        throw "Account object incomplete, cannot continue."
     }
+    catch {
+        $ex = $PSItem
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "DeleteAccount"
+                Message = "$($ex.Exception.Message)"
+                IsError = $true
+            })
 
+        throw $_
+    }
+ 
     try {           
         # Import module
         $moduleName = "ExchangeOnlineManagement"
@@ -174,14 +183,14 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "DeleteAccount"
                 Message = "Error importing module [$ModuleName]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
         # Skip further actions, as this is a critical error
-        continue
+        throw "Error importing module [$ModuleName]"
     }
 
     # Connect to Exchange
@@ -224,17 +233,17 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "DeleteAccount"
                 Message = "Error connecting to Exchange Online. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
         # Skip further actions, as this is a critical error
-        continue
+        throw "Error connecting to Exchange Online"
     }
 
-    # Get Exchange Online Mailbox
+    ## Get Exchange Online Mailbox
     try {
         Write-Verbose "Querying EXO mailbox [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
             
@@ -244,7 +253,7 @@ try {
             throw "Could not find a EXO mailbox [$($aRef.UserPrincipalName) ($($aRef.Guid))]" 
         }
 
-        $auditLogs.Add([PSCustomObject]@{
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
                 Message = "Successfully queried EXO mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]"
                 IsError = $false
@@ -255,11 +264,14 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
                 Message = "Error querying EXO mailbox [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
+    
+        # Skip further actions, as this is a critical error
+        throw "Error querying EXO mailbox"
     }
 
     # Update Mailbox AutoReply Configuration
@@ -273,11 +285,11 @@ try {
             ExternalMessage = $($account.ExternalMessage)
         }
 
-        if ($dryRun -eq $false) {
+        if (-Not($actionContext.DryRun -eq $true)) {
             $updateMailbox = Set-MailboxAutoReplyConfiguration  @mailboxSplatParams -ErrorAction Stop
 
-            $auditLogs.Add([PSCustomObject]@{
-                    Action  = "CreateAccount"
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Action  = "DeleteAccount"
                     Message = "Successfully updated autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
                     IsError = $false
                 })
@@ -291,33 +303,21 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "DeleteAccount"
                 Message = "Error updating autoreply configuration for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
     }
 }
+catch {
+    Write-Verbose $_
+}
 finally {
     # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($auditLogs.IsError -contains $true)) {
-        $success = $true
+    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
     }
-
-    # Send results
-    $result = [PSCustomObject]@{
-        Success          = $success
-        AccountReference = $aRef
-        AuditLogs        = $auditLogs
-        Account          = $account
-
-        # Optionally return data for use in other systems
-        ExportData       = [PSCustomObject]@{
-            DisplayName       = $mailbox.DisplayName
-            UserPrincipalName = $mailbox.UserPrincipalName
-            Guid              = $mailbox.Guid
-        }
-    }
-
-    Write-Output ($result | ConvertTo-Json -Depth 10)
+    $outputContext.AccountReference = $aRef
+    $outputContext.Data = $account
 }

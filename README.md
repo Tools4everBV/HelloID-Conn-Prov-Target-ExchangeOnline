@@ -1,4 +1,16 @@
 | :warning: Warning |
+| :---------------- |
+| This readme is not updated. This will be done in combination with the import/export file for powershell V2 |
+
+| :warning: Warning |
+| :---------------- |
+| Not all scripts are converted to powershell V2. Please check the comments in the first 5 rows of the code |
+
+| :warning: Warning |
+| :---------------- |
+| This script is for the new powershell connector. Make sure to use the mapping and correlation keys like mentionded in this readme. For more information, please read our [documentation](https://docs.helloid.com/en/provisioning/target-systems/powershell-v2-target-systems.html) |
+
+| :warning: Warning |
 |:---------------------------|
 | This connector is written and tested for the EXO module v3.1. Please make sure you have installed, at least, this version. |
 
@@ -10,15 +22,8 @@
   <img src="https://user-images.githubusercontent.com/69046642/160915847-b8a72368-931c-45d1-8f93-9cc7bb974ca8.png" percentage="50">
 </p>
 
-## Versioning
-| Version | Description | Date |
-| - | - | - |
-| 2.0.0   | Use of Access Token to authenticate and no longer use additional PS sessions | 2023/06/09  |
-| 1.0.0   | Initial release | 2022/03/30  |
-
 <!-- TABLE OF CONTENTS -->
 ## Table of Contents
-- [Versioning](#versioning)
 - [Table of Contents](#table-of-contents)
 - [Requirements](#requirements)
 - [Introduction](#introduction)

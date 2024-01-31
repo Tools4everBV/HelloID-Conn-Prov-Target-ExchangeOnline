@@ -1,24 +1,26 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Create-Update-MailboxFolderPermission
 #
-# Version: 2.0.0
+# Version: 3.0.0 | new-powershell-connector
 #####################################################
-# Initialize default values
-$c = $configuration | ConvertFrom-Json
-$p = $person | ConvertFrom-Json
-$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Set to false at start, at the end, only when no error occurs it is set to true
+$outputContext.Success = $false 
+
+# AccountReference must have a value for dryRun
+$aRef = "Unknown"
+
+# Initialize default values
+$c = $actionContext.Configuration
 
 # Set debug logging
 switch ($($c.isDebug)) {
     $true { $VerbosePreference = "Continue" }
     $false { $VerbosePreference = "SilentlyContinue" }
 }
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
 
 # Define configuration properties as required
 $requiredConfigurationFields = @("AzureADOrganization", "AzureADTenantId", "AzureADAppId", "AzureADAppSecret")
@@ -36,17 +38,6 @@ $commands = @(
     , "Set-MailboxFolderPermission"
     , "Get-MailboxFolderStatistics"
 )
-
-# Correlation values
-$correlationProperty = "userPrincipalName" # Has to match the name of the unique identifier
-$correlationValue = $p.Accounts.MicrosoftAzureAD.userPrincipalName # Has to match the value of the unique identifier
-
-# Change mapping here
-$account = [PSCustomObject]@{
-    # Mailbox Folder Permissions
-    mailboxFolderUser        = "Default"
-    mailboxFolderAccessRight = "LimitedDetails"
-}
 
 # Define account properties as required
 $requiredAccountFields = @("mailboxFolderUser", "mailboxFolderAccessRight")
@@ -114,55 +105,77 @@ function Get-ErrorMessage {
 #endregion functions
 
 try {
-    # Check if required fields are available in configuration object
-    $incompleteConfiguration = $false
-    foreach ($requiredConfigurationField in $requiredConfigurationFields) {
-        if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+    try {
+        # Check if required fields are available in configuration object
+        $incompleteConfiguration = $false
+        foreach ($requiredConfigurationField in $requiredConfigurationFields) {
+            if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+            }
+            elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+            }
         }
-        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+
+        if ($incompleteConfiguration -eq $true) {
+            throw "Configuration object incomplete, cannot continue."
         }
-    }
 
-    if ($incompleteConfiguration -eq $true) {
-        throw "Configuration object incomplete, cannot continue."
-    }
-
-    # Check if required fields are available for correlation
-    $incompleteCorrelationValues = $false
-    if ([String]::IsNullOrEmpty($correlationProperty)) {
-        $incompleteCorrelationValues = $true
-        Write-Warning "Required correlation field [$correlationProperty] has a null or empty value"
-    }
-    if ([String]::IsNullOrEmpty($correlationValue)) {
-        $incompleteCorrelationValues = $true
-        Write-Warning "Required correlation field [$correlationValue] has a null or empty value"
-    }
+        if ($actionContext.CorrelationConfiguration.Enabled) {
+            $correlationProperty = $actionContext.CorrelationConfiguration.accountField
+            $correlationValue = $actionContext.CorrelationConfiguration.accountFieldValue
     
-    if ($incompleteCorrelationValues -eq $true) {
-        throw "Correlation values incomplete, cannot continue. CorrelationProperty = [$correlationProperty], CorrelationValue = [$correlationValue]'"
-    }
-
-    # Check if required fields are available in account object
-    $incompleteAccount = $false
-    foreach ($requiredAccountField in $requiredAccountFields) {
-        if ($requiredAccountField -notin $account.PsObject.Properties.Name) {
-            $incompleteAccount = $true
-            Write-Warning "Required account object field [$requiredAccountField] is missing"
+            if ([string]::IsNullOrEmpty($correlationProperty)) {
+                Write-Warning "Correlation is enabled but not configured correctly."
+                Throw "Correlation is enabled but not configured correctly."
+            }
+    
+            if ([string]::IsNullOrEmpty($correlationValue)) {
+                Write-Warning "The correlation value for [$correlationProperty] is empty. This is likely a scripting issue."
+                Throw "The correlation value for [$correlationProperty] is empty. This is likely a scripting issue."
+            }
         }
-        elseif ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
-            $incompleteAccount = $true
-            Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
+        else {
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Message = "Configuration of correlation is madatory."
+                    IsError = $true
+                })
+            Throw "Configuration of correlation is madatory."
         }
-    }
 
-    if ($incompleteAccount -eq $true) {
-        throw "Account object incomplete, cannot continue."
-    }
+        $account = $actionContext.Data
 
+        # Check if required fields are available in account object
+        $incompleteAccount = $false
+        foreach ($requiredAccountField in $requiredAccountFields) {
+            if ($requiredAccountField -notin $account.PsObject.Properties.Name) {
+                $incompleteAccount = $true
+                Write-Warning "Required account object field [$requiredAccountField] is missing"
+            }
+            elseif ([String]::IsNullOrEmpty($account.$requiredAccountField)) {
+                $incompleteAccount = $true
+                Write-Warning "Required account object field [$requiredAccountField] has a null or empty value"
+            }
+        }
+    
+        if ($incompleteAccount -eq $true) {
+            throw "Account object incomplete, cannot continue."
+        }
+
+    }
+    catch {
+        $ex = $PSItem
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
+                Message = "$($ex.Exception.Message)"
+                IsError = $true
+            })
+
+        throw $_
+    }
+ 
     try {           
         # Import module
         $moduleName = "ExchangeOnlineManagement"
@@ -188,14 +201,14 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
                 Message = "Error importing module [$ModuleName]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
         # Skip further actions, as this is a critical error
-        continue
+        throw "Error importing module [$ModuleName]"
     }
 
     # Connect to Exchange
@@ -238,14 +251,14 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
                 Message = "Error connecting to Exchange Online. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
         # Skip further actions, as this is a critical error
-        continue
+        throw "Error connecting to Exchange Online"
     }
 
     # Get Exchange Online Mailbox
@@ -264,8 +277,13 @@ try {
             UserPrincipalName = $mailbox.UserPrincipalName
         }
 
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        # Add guid for export data if configured
+        if ($account.PSObject.Properties.Name -Contains 'guid') {
+            $account.guid = $mailbox.Guid
+        }
+
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
                 Message = "Successfully queried and correlated to EXO mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]"
                 IsError = $false
             })
@@ -275,11 +293,14 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
                 Message = "Error querying EXO mailbox where [$($correlationProperty)] = [$($correlationValue)]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
+
+        # Skip further actions, as this is a critical error
+        throw "Error querying EXO mailbox"
     }
 
     # Update Mailbox Folder Permission
@@ -293,13 +314,13 @@ try {
             Identity     = "$($mailbox.UserPrincipalName):\$($mailboxFolderName)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
             User         = $account.mailboxFolderUser
             AccessRights = $account.mailboxFolderAccessRight
-        } 
+        }
 
-        if ($dryRun -eq $false) {
+        if (-Not($actionContext.DryRun -eq $true)) {
             # See Microsoft Docs for supported params https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
             $updateMailbox = Set-MailboxFolderPermission @mailboxSplatParams -ErrorAction Stop
 
-            $auditLogs.Add([PSCustomObject]@{
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
                     Action  = "CreateAccount"
                     Message = "Successfully updated folder permissions for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
                     IsError = $false
@@ -314,33 +335,21 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "CreateAccount"
                 Message = "Error updating folder permissions for mailbox [$($aRef.userPrincipalName) ($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json). Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
     }
 }
+catch {
+    Write-Verbose $_
+}
 finally {
     # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($auditLogs.IsError -contains $true)) {
-        $success = $true
+    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
     }
-
-    # Send results
-    $result = [PSCustomObject]@{
-        Success          = $success
-        AccountReference = $aRef
-        AuditLogs        = $auditLogs
-        Account          = $account
-
-        # Optionally return data for use in other systems
-        ExportData       = [PSCustomObject]@{
-            DisplayName       = $mailbox.DisplayName
-            UserPrincipalName = $mailbox.UserPrincipalName
-            Guid              = $mailbox.Guid
-        }
-    }
-
-    Write-Output ($result | ConvertTo-Json -Depth 10)
+    $outputContext.AccountReference = $aRef
+    $outputContext.Data = $account
 }

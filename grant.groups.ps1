@@ -1,27 +1,29 @@
 #####################################################
-# HelloID-Conn-Prov-Target-ExchangeOnline-GrantPermission-Group
+# HelloID-Conn-Prov-Target-ExchangeOnline-GrantPermission-SharedMailbox
 #
-# Version: 2.0.0
+# Version: 3.0.0 | new-powershell-connector
 #####################################################
-# Initialize default values
-$c = $configuration | ConvertFrom-Json
-# The accountReference object contains the Identification object provided in the account create call
-$aRef = $accountReference | ConvertFrom-Json
-# The permissionReference object contains the Identification object provided in the retrieve permissions call
-$pRef = $permissionReference | ConvertFrom-Json
-$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Set to false at start, at the end, only when no error occurs it is set to true
+$outputContext.Success = $false 
+
+# Initialize default values
+$c = $actionContext.Configuration
+
+# The accountReference object contains the Identification object provided in the create account call
+$aRef = $actionContext.References.Account 
+
+# The permissionReference object contains the Identification object provided in the retrieve permissions call
+$pRef = $actionContext.References.Permission
 
 # Set debug logging
 switch ($($c.isDebug)) {
     $true { $VerbosePreference = "Continue" }
     $false { $VerbosePreference = "SilentlyContinue" }
 }
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
 
 # Define configuration properties as required
 $requiredConfigurationFields = @("AzureADOrganization", "AzureADTenantId", "AzureADAppId", "AzureADAppSecret")
@@ -34,7 +36,9 @@ $AADAppSecret = $c.AzureADAppSecret
 
 # PowerShell commands to import
 $commands = @(
-    "Add-DistributionGroupMember"
+    "Add-MailboxPermission"
+    , "Add-RecipientPermission"
+    , "Set-Mailbox"
 )
 
 #region functions
@@ -100,21 +104,38 @@ function Get-ErrorMessage {
 #endregion functions
 
 try {
-    # Check if required fields are available in configuration object
-    $incompleteConfiguration = $false
-    foreach ($requiredConfigurationField in $requiredConfigurationFields) {
-        if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+    try {
+        # Verify if [aRef] has a value
+        if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {      
+            throw 'The account reference could not be found'
         }
-        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+                
+        # Check if required fields are available in configuration object
+        $incompleteConfiguration = $false
+        foreach ($requiredConfigurationField in $requiredConfigurationFields) {
+            if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+            }
+            elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+            }
+        }
+
+        if ($incompleteConfiguration -eq $true) {
+            throw "Configuration object incomplete, cannot continue."
         }
     }
+    catch {
+        $ex = $PSItem
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "GrantMembership"
+                Message = "$($ex.Exception.Message)"
+                IsError = $true
+            })
 
-    if ($incompleteConfiguration -eq $true) {
-        throw "Configuration object incomplete, cannot continue."
+        throw $_
     }
 
     try {           
@@ -142,14 +163,14 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "GrantMembership"
                 Message = "Error importing module [$ModuleName]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
         # Skip further actions, as this is a critical error
-        continue
+        throw "Error importing module [$ModuleName]"
     }
 
     # Connect to Exchange
@@ -192,72 +213,138 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Action  = "GrantMembership"
                 Message = "Error connecting to Exchange Online. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
             })
 
         # Skip further actions, as this is a critical error
-        continue
+        throw "Error connecting to Exchange Online"
     }
 
-    # Grant Exchange Online Groupmembership
-    try {
-        Write-Verbose "Granting permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+    # Grant Exchange Online Mailbox permission
+    foreach ($permission in $pRef.Permissions) {
+        switch ($permission) {
+            "Full Access" {
+                try {
+                    Write-Verbose "Granting permission [FullAccess] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
 
-        $dgSplatParams = @{
-            Identity                        = $pRef.id
-            Member                          = $aRef.Guid
-            BypassSecurityGroupManagerCheck = $true
-        }
+                    $FullAccessPermissionSplatParams = @{
+                        Identity        = $pRef.id
+                        User            = $aRef.Guid
+                        AccessRights    = 'FullAccess'
+                        InheritanceType = 'All'
+                        AutoMapping     = $AutoMapping
+                    } 
 
-        if ($dryRun -eq $false) {
-            $addDGMember = Add-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
+                    if (-Not($actionContext.DryRun -eq $true)) {
+                        $addFullAccessPermission = Add-MailboxPermission @FullAccessPermissionSplatParams -ErrorAction Stop
 
-            $auditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "Successfully granted permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                    IsError = $false
-                })
-        }
-        else {
-            Write-Warning "DryRun: would grant permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-        }
-    }
-    catch {
-        $ex = $PSItem
-        $errorMessage = Get-ErrorMessage -ErrorObject $ex
-        
-        Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*") {
-            $auditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] is already a member of the group [$($pRef.Name) ($($pRef.id))]. Skipped grant of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
-                    IsError = $false
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Action  = "GrantMembership"
+                                Message = "Successfully granted permission [FullAccess] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        Write-Warning "DryRun: would grant permission [FullAccess] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                    }
                 }
-            )
-        }
-        else {
-            $auditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "Error granting permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
-                    IsError = $True
-                })
+                catch {
+                    $ex = $PSItem
+                    $errorMessage = Get-ErrorMessage -ErrorObject $ex
+                    
+                    Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            Action  = "GrantMembership"
+                            Message = "Error granting permission [FullAccess] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
+                            IsError = $True
+                        })
+                }
+            }
+            "Send As" {
+                try {
+                    Write-Verbose "Granting permission [SendAs] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+
+                    $sendAsPermissionSplatParams = @{
+                        Identity     = $pRef.id
+                        Trustee      = $aRef.Guid
+                        AccessRights = 'SendAs'
+                        Confirm      = $false
+                    } 
+
+                    if (-Not($actionContext.DryRun -eq $true)) {
+                        $addSendAsPermission = Add-RecipientPermission @sendAsPermissionSplatParams -ErrorAction Stop
+
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Action  = "GrantMembership"
+                                Message = "Successfully granted permission [SendAs] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        Write-Warning "DryRun: would grant permission [SendAs] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                    }
+                }
+                catch {
+                    $ex = $PSItem
+                    $errorMessage = Get-ErrorMessage -ErrorObject $ex
+                    
+                    Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            Action  = "GrantMembership"
+                            Message = "Error granting permission [SendAs] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
+                            IsError = $True
+                        })
+                }
+            }
+            "Send on Behalf" {
+                try {
+                    Write-Verbose "Granting permission [SendonBehalf] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+
+                    # Can only be assigned to mailbox (so just a user account isn't sufficient, there has to be a mailbox for the user)
+                    $SendonBehalfPermissionSplatParams = @{
+                        Identity            = $pRef.id
+                        GrantSendOnBehalfTo = @{add = "$($aRef.Guid)" }
+                        Confirm             = $false
+                    } 
+
+                    
+                    if (-Not($actionContext.DryRun -eq $true)) {
+                        $addSendonBehalfPermission = Set-Mailbox @SendonBehalfPermissionSplatParams -ErrorAction Stop
+
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Action  = "GrantMembership"
+                                Message = "Successfully granted permission [SendonBehalf] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        Write-Warning "DryRun: would grant permission [SendonBehalf] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
+                    }
+                }
+                catch {
+                    $ex = $PSItem
+                    $errorMessage = Get-ErrorMessage -ErrorObject $ex
+                    
+                    Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            Action  = "GrantMembership"
+                            Message = "Error granting permission [SendonBehalf] to mailbox [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
+                            IsError = $True
+                        })
+                }
+            }
         }
     }
 }
+catch {
+    Write-Verbose $_
+}
 finally {
     # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($auditLogs.IsError -contains $true)) {
-        $success = $true
+    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
     }
-
-    # Send results
-    $result = [PSCustomObject]@{
-        Success   = $success
-        AuditLogs = $auditLogs
-    }
-
-    Write-Output ($result | ConvertTo-Json -Depth 10)
 }
