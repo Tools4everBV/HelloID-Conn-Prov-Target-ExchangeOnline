@@ -293,7 +293,7 @@ try {
                         Confirm      = $false
                     } 
 
-                    if ($dryRun -eq $false) {
+                    if (-Not($actionContext.DryRun -eq $true)) {
                         $removeSendAsPermission = Remove-RecipientPermission @sendAsPermissionSplatParams -ErrorAction Stop
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
@@ -348,7 +348,7 @@ try {
                         Confirm             = $false
                     }
                     
-                    if ($dryRun -eq $false) {
+                    if (-Not($actionContext.DryRun -eq $true)) {
                         $removeSendonBehalfPermission = Set-Mailbox @SendonBehalfPermissionSplatParams -ErrorAction Stop
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
