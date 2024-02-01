@@ -36,8 +36,8 @@ $AADAppSecret = $c.AzureADAppSecret
 
 # PowerShell commands to import
 $commands = @(
-    "Add-MailboxPermission"
-    , "Add-RecipientPermission"
+    "Remove-MailboxPermission"
+    , "Remove-RecipientPermission"
     , "Set-Mailbox"
 )
 
