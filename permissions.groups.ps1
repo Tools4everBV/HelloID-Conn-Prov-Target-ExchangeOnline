@@ -1,13 +1,14 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-Permissions-Groups
 #
-# Version: 2.0.0
+# Version: 3.0.0 | new-powershell-connector
 #####################################################
-# Initialize default values
-$c = $configuration | ConvertFrom-Json
 
-# Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Initialize default values
+$c = $actionContext.Configuration
 
 # Set debug logging
 switch ($($c.isDebug)) {
@@ -201,6 +202,9 @@ try {
         throw "Error querying EXO Groups. Error Message: $($errorMessage.AuditErrorMessage)"
     }
 }
+catch {
+    Write-Verbose $_
+}
 finally {
     # Send results
     foreach ($group in $groups) {
@@ -216,14 +220,14 @@ finally {
         # Shorten DisplayName to max. 100 chars
         $displayName = "$($groupType) - $($group.DisplayName)"
         $displayName = $displayName.substring(0, [System.Math]::Min(100, $displayName.Length)) 
-        $permission = @{
-            DisplayName    = $displayName
-            Identification = @{
-                Id   = $group.Guid
-                Name = $group.DisplayName
+        $outputContext.Permissions.Add(
+            @{
+                DisplayName    = $displayName
+                Identification = @{
+                    Id   = $group.Guid
+                    Name = $group.DisplayName
+                }
             }
-        }
-
-        Write-Output ($permission | ConvertTo-Json -Depth 10) 
+        )
     }
 }

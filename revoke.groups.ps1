@@ -1,19 +1,23 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-RevokePermission-Group
 #
-# Version: 2.0.0
+# Version: 3.0.0 | new-powershell-connector
 #####################################################
-# Initialize default values
-$c = $configuration | ConvertFrom-Json
-# The accountReference object contains the Identification object provided in the account create call
-$aRef = $accountReference | ConvertFrom-Json
-# The permissionReference object contains the Identification object provided in the retrieve permissions call
-$pRef = $permissionReference | ConvertFrom-Json
-$success = $false # Set to false at start, at the end, only when no error occurs it is set to true
-$auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Set TLS to accept TLS, TLS 1.1 and TLS 1.2
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+# Enable TLS1.2
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# Set to false at start, at the end, only when no error occurs it is set to true
+$outputContext.Success = $false 
+
+# Initialize default values
+$c = $actionContext.Configuration
+
+# The accountReference object contains the Identification object provided in the create account call
+$aRef = $actionContext.References.Account 
+
+# The permissionReference object contains the Identification object provided in the retrieve permissions call
+$pRef = $actionContext.References.Permission
 
 # Set debug logging
 switch ($($c.isDebug)) {
@@ -100,21 +104,38 @@ function Get-ErrorMessage {
 #endregion functions
 
 try {
-    # Check if required fields are available in configuration object
-    $incompleteConfiguration = $false
-    foreach ($requiredConfigurationField in $requiredConfigurationFields) {
-        if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+    try {
+        # Verify if [aRef] has a value
+        if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {      
+            throw 'The account reference could not be found'
         }
-        elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
-            $incompleteConfiguration = $true
-            Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+                
+        # Check if required fields are available in configuration object
+        $incompleteConfiguration = $false
+        foreach ($requiredConfigurationField in $requiredConfigurationFields) {
+            if ($requiredConfigurationField -notin $c.PsObject.Properties.Name) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] is missing"
+            }
+            elseif ([String]::IsNullOrEmpty($c.$requiredConfigurationField)) {
+                $incompleteConfiguration = $true
+                Write-Warning "Required configuration object field [$requiredConfigurationField] has a null or empty value"
+            }
+        }
+
+        if ($incompleteConfiguration -eq $true) {
+            throw "Configuration object incomplete, cannot continue."
         }
     }
+    catch {
+        $ex = $PSItem
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "$($ex.Exception.Message)"
+                IsError = $true
+            })
 
-    if ($incompleteConfiguration -eq $true) {
-        throw "Configuration object incomplete, cannot continue."
+        throw $_
     }
 
     try {           
@@ -142,7 +163,7 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
                 Message = "Error importing module [$ModuleName]. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
@@ -192,7 +213,7 @@ try {
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
-        $auditLogs.Add([PSCustomObject]@{
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
                 Message = "Error connecting to Exchange Online. Error Message: $($errorMessage.AuditErrorMessage)"
                 IsError = $True
@@ -212,10 +233,10 @@ try {
             BypassSecurityGroupManagerCheck = $true
         }
 
-        if ($dryRun -eq $false) {
+        if (-Not($actionContext.DryRun -eq $true)) {
             $removeDGMember = Remove-DistributionGroupMember @dgSplatParams -Confirm:$false -ErrorAction Stop
 
-            $auditLogs.Add([PSCustomObject]@{
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Successfully revoked permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
@@ -231,7 +252,7 @@ try {
         
         Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($errorMessage.VerboseErrorMessage)"
         if ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
-            $auditLogs.Add([PSCustomObject]@{
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] isn't a member of the group [$($pRef.Name) ($($pRef.id))]. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
@@ -239,7 +260,7 @@ try {
             )
         }
         elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($pRef.id)*") {
-            $auditLogs.Add([PSCustomObject]@{
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Group [$($pRef.Name) ($($pRef.id))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
@@ -247,7 +268,7 @@ try {
             )
         }
         elseif ($($errorMessage.AuditErrorMessage) -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $($errorMessage.AuditErrorMessage) -like "*$($aRef.Guid)*") {
-            $auditLogs.Add([PSCustomObject]@{
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "User [$($aRef.UserPrincipalName) ($($aRef.Guid))] couldn't be found. Possibly no longer exists. Skipped revoke of permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]"
                     IsError = $false
@@ -255,7 +276,7 @@ try {
             )
         }
         else {
-            $auditLogs.Add([PSCustomObject]@{
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Error revoking permission to group [$($pRef.Name) ($($pRef.id))] for user [$($aRef.UserPrincipalName) ($($aRef.Guid))]. Error Message: $($errorMessage.AuditErrorMessage)"
                     IsError = $True
@@ -263,17 +284,12 @@ try {
         }
     }
 }
+catch {
+    Write-Verbose $_
+}
 finally {
     # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($auditLogs.IsError -contains $true)) {
-        $success = $true
+    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
+        $outputContext.Success = $true
     }
-
-    # Send results
-    $result = [PSCustomObject]@{
-        Success   = $success
-        AuditLogs = $auditLogs
-    }
-
-    Write-Output ($result | ConvertTo-Json -Depth 10)
 }
