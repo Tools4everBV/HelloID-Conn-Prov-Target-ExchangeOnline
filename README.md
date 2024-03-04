@@ -118,6 +118,10 @@ The following settings are required to connect.
 | Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions |
 | Azure AD App Secret | Secret of the Azure AD App Registration with Exchange Permissions |
 
+### Remarks
+
+In some cases, Exchange Online takes more than 70 seconds to return an error. For example when using the 'Set-MailboxRegionalConfiguration' with an invalid date format. For this reason, if you get the 30 seconds timeout then we recommend testing locally on the agent server.
+
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012518799-How-to-add-a-target-system) pages_
 
