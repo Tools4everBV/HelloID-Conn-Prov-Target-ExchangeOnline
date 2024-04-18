@@ -200,7 +200,7 @@ try {
     }
 }
 catch {
-    Write-Verbose $_
+    Write-Warning $_
 }
 finally {
     # Send results

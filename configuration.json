@@ -38,6 +38,7 @@
     "defaultValue": "",
     "templateOptions": {
       "label": "Azure AD App Secret",
+      "type": "password",
       "placeholder": "1234567-2538-4922-80e2-b890abcde",
       "description": "The Secret of the App Registration in Azure with the Exchange permissions to the specfied organization",
       "required": true
