@@ -1,47 +1,56 @@
 [
   {
-    "key": "AzureADOrganization",
+    "key": "Organization",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD Organization",
+      "label": "Organization",
       "placeholder": "enyoi.onmicrosoft.com",
-      "description": "The Tenant Name of the organization in Azure",
+      "description": "",
       "required": true
     }
   },
   {
-    "key": "AzureADTenantId",
+    "key": "TenantID",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD Tenant Id",
-      "placeholder": "1234567-2538-4922-80e2-b890abcde",
-      "description": "The ID of the Tenant in Azure",
+      "label": "App Registration Directory (tenant) ID",
+      "placeholder": "615g75e2-0v74-4a3c-6gaf-241t1q4m7f54",
+      "description": "",
       "required": true
     }
   },
   {
-    "key": "AzureADAppId",
+    "key": "AppId",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD App Id",
-      "placeholder": "1234567-2538-4922-80e2-b890abcde",
-      "description": "The ID of the App Registration in Azure with the Exchange permissions to the specfied organization",
+      "label": "App Registration Application (client) ID",
+      "placeholder": "9c12a9b1-34c5-678d-ac34-8a890100d46d",
+      "description": "",
       "required": true
     }
   },
   {
-    "key": "AzureADAppSecret",
+    "key": "AppSecret",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD App Secret",
+      "label": "App Registration Client Secret",
       "type": "password",
-      "placeholder": "1234567-2538-4922-80e2-b890abcde",
-      "description": "The Secret of the App Registration in Azure with the Exchange permissions to the specfied organization",
+      "placeholder": "3lib1234NwDvx.6abc98M._r0yz_7h_B34",
       "required": true
+    }
+  },
+  {
+    "key": "correlateOnly",
+    "type": "checkbox",
+    "defaultValue": false,
+    "templateOptions": {
+      "label": "Correlate only",
+      "description": "When toggled, this connector will only correlate to an existing account and skip all further account lifecycle actions",
+      "required": false
     }
   },
   {
