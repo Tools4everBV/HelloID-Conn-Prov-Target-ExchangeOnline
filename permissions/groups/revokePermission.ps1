@@ -1,5 +1,5 @@
 #################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-Revok
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-Revoke
 # Revoke groupmembership from account
 # PowerShell V2
 #################################################
