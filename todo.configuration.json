@@ -44,16 +44,6 @@
     }
   },
   {
-    "key": "correlateOnly",
-    "type": "checkbox",
-    "defaultValue": false,
-    "templateOptions": {
-      "label": "Correlate only",
-      "description": "When toggled, this connector will only correlate to an existing account and skip all further account lifecycle actions",
-      "required": false
-    }
-  },
-  {
     "key": "isDebug",
     "type": "checkbox",
     "defaultValue": false,
