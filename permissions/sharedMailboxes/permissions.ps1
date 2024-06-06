@@ -13,8 +13,8 @@ $WarningPreference = "Continue"
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-Mailbox"
-    , "Get-EXOMailbox"
+    "Get-Recipient"
+    , "Get-EXORecipient"
 )
 
 #region functions
@@ -183,6 +183,7 @@ try {
     
     $getMicrosoftExchangeOnlineSharedMailboxesSplatParams = @{
         # Filter               = "Name -like `"*Shared*`""
+        Properties           = @("Guid", "DisplayName")
         RecipientTypeDetails = "SharedMailbox"
         ResultSize           = "Unlimited"
         Verbose              = $false
@@ -190,7 +191,7 @@ try {
     }
 
     $microsoftExchangeOnlineSharedMailboxes = $null
-    $microsoftExchangeOnlineSharedMailboxes = Get-EXOMailbox @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
+    $microsoftExchangeOnlineSharedMailboxes = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
 
     Write-Information "Queried Microsoft Exchange Online Shared Mailboxes. Result count: $(($microsoftExchangeOnlineSharedMailboxes | Measure-Object).Count)"
     #endregion Get Microsoft Exchange Online Shared Mailboxes
@@ -198,7 +199,7 @@ try {
     #region Send results to HelloID
     $microsoftExchangeOnlineSharedMailboxes | ForEach-Object {
         # Shorten DisplayName to max. 100 chars
-        $displayName = "Shared Mailbox - $($_.displayName)"
+        $displayName = "Shared Mailbox - $($_.DisplayName)"
         $displayName = $displayName.substring(0, [System.Math]::Min(100, $displayName.Length))
 
         $outputContext.Permissions.Add(
@@ -206,7 +207,7 @@ try {
                 displayName    = $displayName
                 identification = @{
                     Id          = $_.Guid
-                    Name        = $_.displayName
+                    Name        = $_.DisplayName
                     Type        = "Shared Mailbox"
                     Permissions = @("Full Access", "Send As") # Options:  Full Access,Send As, Send on Behalf
                 }
