@@ -6,7 +6,7 @@
     "templateOptions": {
       "label": "Organization",
       "placeholder": "enyoi.onmicrosoft.com",
-      "description": "",
+      "description": "You must use the primary .onmicrosoft.com domain of the organization. Using anything else may lead to inconsistent results.",
       "required": true
     }
   },

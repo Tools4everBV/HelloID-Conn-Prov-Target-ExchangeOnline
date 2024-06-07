@@ -34,6 +34,7 @@
   - [Assign Azure AD roles to the application](#assign-azure-ad-roles-to-the-application)
   - [Authentication and Authorization](#authentication-and-authorization)
   - [Connection settings](#connection-settings)
+  - [Remarks](#remarks)
 - [Getting help](#getting-help)
 - [HelloID Docs](#helloid-docs)
 
@@ -113,7 +114,7 @@ The following settings are required to connect.
 
 | Setting     | Description |
 | ------------ | ----------- |
-| Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists. **Please note: This has to be the .onmicrosoft domain name** |
+| Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists. **Please note: You must use the primary .onmicrosoft.com domain of the organization. Using anything else may lead to inconsistent results.** |
 | Azure AD Tenant ID | Id of the Azure tenant |
 | Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions |
 | Azure AD App Secret | Secret of the Azure AD App Registration with Exchange Permissions |
