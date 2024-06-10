@@ -104,27 +104,14 @@ function Resolve-HTTPError {
 try {
     #region Import module
     $actionMessage = "importing module"
-    
-    $moduleName = "ExchangeOnlineManagement"
-    
-    # Check if module is already imported or available on disk
-    $module = Get-Module -Name $moduleName -ListAvailable -ErrorAction SilentlyContinue -Verbose:$false
-    
-    if ($module) {
-        Write-Verbose "Module [$moduleName] is already imported."
+    $importModuleSplatParams = @{
+        Name        = "ExchangeOnlineManagement"
+        Cmdlet      = $commands
+        Verbose     = $false
+        ErrorAction = "Stop"
     }
-    else {
-        # Check if module is available in online gallery
-        if (Find-Module -Name $moduleName) {
-            # Import module with specified commands
-            $module = Import-Module $ModuleName -Cmdlet $commands -Verbose:$false
-            Write-Verbose "Imported module [$ModuleName]"
-        }
-        else {
-            # If the module is not imported, not available and not in the online gallery then abort
-            throw "Module [$ModuleName] is not available. Please install the module using: Install-Module -Name [$ModuleName] -Force"
-        }
-    }
+    Import-Module @importModuleSplatParams
+    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Import module
     
     #region Create access token
