@@ -125,7 +125,7 @@ try {
     $actionMessage = "creating access token"
 
     $createAccessTokenBody = @{
-        revoke_type   = "client_credentials"
+        grant_type    = "client_credentials"
         client_id     = $actionContext.Configuration.AppId
         client_secret = $actionContext.Configuration.AppSecret
         resource      = "https://outlook.office365.com"
