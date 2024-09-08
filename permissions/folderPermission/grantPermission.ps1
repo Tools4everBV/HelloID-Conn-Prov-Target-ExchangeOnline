@@ -1,6 +1,6 @@
 #################################################
 # HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-folderPermission-Grant
-# Grant mailbox folder permissions to account
+# Set permission for user on folder of mailbox
 # PowerShell V2
 #################################################
 # Enable TLS1.2
@@ -16,9 +16,8 @@ $WarningPreference = "Continue"
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-User"
+    "Get-MailboxFolderStatistics"
     , "Set-MailboxFolderPermission"
-    , "Get-MailboxFolderStatistics"
 )
 
 #region functions
@@ -74,30 +73,60 @@ function Resolve-ExchangeOnlineError {
         Write-Output $httpErrorObj
     }
 }
+
+function Convert-StringToBoolean($obj) {
+    if ($obj -is [PSCustomObject]) {
+        foreach ($property in $obj.PSObject.Properties) {
+            $value = $property.Value
+            if ($value -is [string]) {
+                $lowercaseValue = $value.ToLower()
+                if ($lowercaseValue -eq "true") {
+                    $obj.$($property.Name) = $true
+                }
+                elseif ($lowercaseValue -eq "false") {
+                    $obj.$($property.Name) = $false
+                }
+            }
+            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
+                $obj.$($property.Name) = Convert-StringToBoolean $value
+            }
+            elseif ($value -is [System.Collections.IList]) {
+                for ($i = 0; $i -lt $value.Count; $i++) {
+                    $value[$i] = Convert-StringToBoolean $value[$i]
+                }
+                $obj.$($property.Name) = $value
+            }
+        }
+    }
+    return $obj
+}
 #endregion functions
 
 try {
     #region Verify account reference
     $actionMessage = "verifying account reference"
+    
     if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
         throw "The account reference could not be found"
     }
     #endregion Verify account reference
 
     #region Import module
-    $actionMessage = "importing module"
+    $actionMessage = "importing module [ExchangeOnlineManagement]"
+
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
-    Import-Module @importModuleSplatParams
+
+    $importModuleResponse = Import-Module @importModuleSplatParams
+
     Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
+    #endregion Create access token
 
     #region Create access token
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "creating access token"
 
     $createAccessTokenBody = @{
@@ -118,21 +147,19 @@ try {
         ErrorAction     = "Stop"
     }
 
-    $createdAccessToken = Invoke-RestMethod @createAccessTokenSplatParams
-    $accessToken = $createdAccessToken.access_token
+    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
     #endregion Create access token
 
-    #region Connect to Exchange
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to exchange"
+    #region Connect to Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
 
-    # Connect to Exchange Online in an unattended scripting scenario using an access token.
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $accessToken
+        AccessToken           = $createAccessTokenResonse.access_token
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false
@@ -142,37 +169,55 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+
+    Write-Verbose "Connected to Microsoft Exchange Online"
+    #endregion Connect to Microsoft Exchange Online
+
+    #region Get Mailbox "Calendar" folder name
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
+    $actionMessage = "querying Mailbox [Calendar] folder name for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+
+    $getMicrosoftExchangeOnlineMailboxFolderStatisticsSplatParams = @{
+        Identity    = $actionContext.References.Account
+        FolderScope = "Calendar"
+        Verbose     = $false
+        ErrorAction = "Stop"
+    }
+
+    $getMicrosoftExchangeOnlineMailboxFolderStatisticsResponse = Get-MailboxFolderStatistics @getMicrosoftExchangeOnlineMailboxFolderStatisticsSplatParams
+    $mailboxFolderName = ($getMicrosoftExchangeOnlineMailboxFolderStatisticsResponse | Where-Object { $_.FolderType -eq 'Calendar' }).Name
         
-    Write-Verbose "Successfully connected to Exchange Online"
-    #endregion Connect to Exchange
+    Write-Verbose "Queried Mailbox [Calendar] folder name for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json). Result: $($mailboxFolderName | ConvertTo-Json)"
+    #endregion Get Mailbox "Calendar" folder name
 
-    #region Grant permission to account
-    # Update Mailbox Folder Permission
-    # Get Mailbox "Calendar" folder name
-    $mailboxFolderName = (Get-MailboxFolderStatistics -Identity $actionContext.References.Account -FolderScope Calendar | Where-Object { $_.FolderType -eq 'Calendar' }).Name
+    #region Set Mailbox Folder Permission
+    # Docs: https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
+    $actionMessage = "setting permission for [$($actionContext.References.Permission.mailboxFolderUser)] to [$($actionContext.References.Permission.mailboxFolderAccessRight)] on the [$($mailboxFolderName)] folder of mailbox [$($actionContext.References.Account)]"
 
-    $mailboxSplatParams = @{
-        Identity     = "$($actionContext.References.Account):\$($mailboxFolderName)" # Can differ according to language, so might be: "$($mailbox.UserPrincipalName):\Calendar"
+    $setMailboxFolderPermissionSplatParams = @{
+        Identity     = "$($actionContext.References.Account):\$($mailboxFolderName)"
         User         = $actionContext.References.Permission.mailboxFolderUser
         AccessRights = $actionContext.References.Permission.mailboxFolderAccessRight
+        Verbose      = $false
+        ErrorAction  = "Stop"
     }
-    
-    Write-Verbose "Updating folder permissions for mailbox [($($aRef.Guid))]: $($mailboxSplatParams | ConvertTo-Json)"
+
+    Write-Verbose "SplatParams: $($setMailboxFolderPermissionSplatParams | ConvertTo-Json)"
 
     if (-Not($actionContext.DryRun -eq $true)) {
-        # See Microsoft Docs for supported params https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
-        $null = Set-MailboxFolderPermission @mailboxSplatParams -ErrorAction Stop
+        $setMailboxFolderPermissionResponse = Set-MailboxFolderPermission @setMailboxFolderPermissionSplatParams
 
         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "Successfully updated folder permissions for mailbox $($actionContext.References.Account))]. AccessRights: [$($actionContext.References.Permission.mailboxFolderAccessRight)]"
+                # Action  = "" # Optional
+                Message = "Set permission for [$($actionContext.References.Permission.mailboxFolderUser)] to [$($actionContext.References.Permission.mailboxFolderAccessRight)] on the [$($mailboxFolderName)] folder of mailbox [$($actionContext.References.Account)]."
                 IsError = $false
             })
     }
     else {
-        Write-Warning "DryRun: would update folder permissions for mailbox [$($actionContext.References.Account))]. AccessRights: [$($actionContext.References.Permission.mailboxFolderAccessRight)]"
+        Write-Warning "DryRun: Would set permission for [$($actionContext.References.Permission.mailboxFolderUser)] to [$($actionContext.References.Permission.mailboxFolderAccessRight)] on the [$($mailboxFolderName)] folder of mailbox [$($actionContext.References.Account)]."
     }
-    #endregion Grant permission to account
+    #endregion Set Mailbox Folder Permission
 }
 catch {
     $ex = $PSItem
@@ -195,11 +240,22 @@ catch {
         })
 }
 finally {
-    # Check if auditLogs contains errors, if no errors are found, set success to true
-    if ($outputContext.AuditLogs.IsError -contains $true) {
-        $outputContext.Success = $false
+    #region Disconnect from Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
+
+    $deleteExchangeSessionSplatParams = @{
+        Confirm     = $false
+        ErrorAction = "Stop"
     }
-    else {
+
+    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    
+    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    #endregion Disconnect from Microsoft Exchange Online
+
+    # Check if auditLogs contains errors, if no errors are found, set success to true
+    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
         $outputContext.Success = $true
     }
 }
