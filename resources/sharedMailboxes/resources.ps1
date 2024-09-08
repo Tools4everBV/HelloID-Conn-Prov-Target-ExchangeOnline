@@ -49,7 +49,7 @@ function Get-SanitizedGroupName {
     $newName = $newName -replace "[`,~,!,#,$,%,^,&,*,(,),+,=,<,>,?,/,',`",,:,\,|,},{,.]", ""
     $newName = $newName -replace "\[", ""
     $newName = $newName -replace "]", ""
-    $newName = $newName -replace " ", ""
+    $newName = $newName -replace " ", "_"
     $newName = $newName -replace "\.\.\.\.\.", "."
     $newName = $newName -replace "\.\.\.\.", "."
     $newName = $newName -replace "\.\.\.", "."
@@ -141,35 +141,27 @@ function Resolve-HTTPError {
 }
 #endregion functions
 
-#region group
-# Change mapping here
-# Make sure the resourceContext data is unique. Fill in the required fields after -unique
-# Example: department
-$resourceData = $resourceContext.SourceData | Select-Object -Unique ExternalId, DisplayName
-# Example: title
-# $resourceData = $resourceContext.SourceData | Select-Object -Unique ExternalId, Name
-# Define correlation
-# $correlationField = "displayName"
+# Define correlation field
 $correlationField = "CustomAttribute1"
-$correlationValue = "" # Defined later in script
-#endRegion group
 
 #region Get Access Token
 try {
     #region Import module
-    $actionMessage = "importing module"
+    $actionMessage = "importing module [ExchangeOnlineManagement]"
+    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
-    Import-Module @importModuleSplatParams
+
+    $importModuleResponse = Import-Module @importModuleSplatParams
+
     Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
+    #endregion Create access token
 
     #region Create access token
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "creating access token"
 
     $createAccessTokenBody = @{
@@ -190,23 +182,19 @@ try {
         ErrorAction     = "Stop"
     }
 
-    $createdAccessToken = Invoke-RestMethod @createAccessTokenSplatParams
-    $accessToken = $createdAccessToken.access_token
+    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
     #endregion Create access token
 
-    #region Connect to Exchange
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to exchange"
-
-    # Connect to Exchange Online in an unattended scripting scenario using an access token.
-    Write-Verbose "Connecting to Exchange Online"
+    #region Connect to Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
 
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $accessToken
+        AccessToken           = $createAccessTokenResonse.access_token
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false
@@ -216,171 +204,136 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createdExchangeSession = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        
-    Write-Verbose "Successfully connected to Exchange Online"
-    #endregion Connect to Exchange
+    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    
+    Write-Verbose "Connected to Microsoft Exchange Online"
+    #endregion Connect to Microsoft Exchange Online
 
-    #region Get Exchange Online Shared Mailboxes
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
+    #region Get Shared Mailboxes
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
     $actionMessage = "querying Microsoft Exchange Online Shared Mailboxes"
     
-    # Change mapping here
     $getMicrosoftExchangeOnlineSharedMailboxesSplatParams = @{
-        # Filter               = "Name -like `"*Shared*`""
-        Properties           = @("Guid", "DisplayName", "CustomAttribute1") # If more properties are needed please add them here
+        Properties           = (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
         RecipientTypeDetails = "SharedMailbox"
         ResultSize           = "Unlimited"
         Verbose              = $false
         ErrorAction          = "Stop"
     }
 
-    $microsoftExchangeOnlineSharedMailboxes = $null
-    $microsoftExchangeOnlineSharedMailboxes = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
-
-    # Group on correlation property to check if group exists (as correlation property has to be unique for a group)
-    $microsoftExchangeOnlineSharedMailboxesGrouped = $microsoftExchangeOnlineSharedMailboxes | Group-Object $correlationField -AsHashTable -AsString
+    $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
+    $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
+    $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
 
     Write-Information "Queried Microsoft Exchange Online Shared Mailboxes. Result count: $(($microsoftExchangeOnlineSharedMailboxes | Measure-Object).Count)"
-    #endregion Get Microsoft Exchange Online Shared Mailboxes
+    #endregion Get Shared Mailboxes
+
+    #region Process resources
+    # Ensure the resourceContext data is unique based on ExternalId and DisplayName
+    # and always sorted in the same order (by ExternalId and DisplayName)
+    $resourceData = $resourceContext.SourceData |
+    Select-Object -Property ExternalId, DisplayName -Unique | # Ensure uniqueness
+    Sort-Object -Property ExternalId, DisplayName # Ensure consistent order by sorting on ExternalId and then by DisplayName
+
+    # Group on $correlationField to check if shared mailbox exists (as correlation property has to be unique for a shared mailbox)
+    $microsoftExchangeOnlineSharedMailboxesGrouped = $microsoftExchangeOnlineSharedMailboxes | Group-Object -Property $correlationField -AsHashTable -AsString
 
     foreach ($resource in $resourceData) {
-        $actionMessage = "querying sharedMailbox for resource: $($resource | ConvertTo-Json)"
-        
-        # Change mapping here
-        # Example: department_<departmentname>
-        # $groupName = "department_" + $resource.DisplayName
-        $displayName = $resource.DisplayName
-
-        # write-warning "primarySmtpAddress [$primarySmtpAddress]"
-        # Example: title_<titlename>
-        # $groupName = "title_" + $resource.Name
-
-        # Determine primarySmtpAddress
-        $primarySmtpAddress = $resource.DisplayName
-        $domain = '@yourdomain.com'
-        $primarySmtpAddress = Get-SanitizedGroupName -Name $primarySmtpAddress
-        $primarySmtpAddress = $primarySmtpAddress + $domain
-        $primarySmtpAddress = $primarySmtpAddress.ToLower()
-
-        # Sanitize group name, e.g. replace " - " with "_" or other sanitization actions 
-        # $groupName = Get-SanitizedGroupName -Name $groupName
-       
+        #region get shared mailbox for resource
+        $actionMessage = "querying shared mailbox for resource: $($resource | ConvertTo-Json)"
+ 
         $correlationValue = $resource.ExternalId
 
         $correlatedResource = $null
-        $correlatedResource = $microsoftExchangeOnlineSharedMailboxesGrouped["$($correlationValue)"]
-
+        if (($microsoftExchangeOnlineSharedMailboxesGrouped | Measure-Object).Count -gt 0) {
+            $correlatedResource = $microsoftExchangeOnlineSharedMailboxesGrouped["$($correlationValue)"]
+        }
+        #endregion get shared mailbox for resource
+        
         #region Calulate action
         if (($correlatedResource | Measure-Object).count -eq 0) {
             $actionResource = "CreateResource"
         }
         elseif (($correlatedResource | Measure-Object).count -eq 1) {
-            # Exmple how to update a resource
-            # if ($displayName -eq $correlatedResource.DisplayName) {
             $actionResource = "CorrelateResource"
-            # }
-            # else {
-            #     $actionResource = "CorrelateUpdateResource"
-            # }
-        }
-        else {
-            $actionResource = "MultipleFoundResource"
         }
         #endregion Calulate action
 
         #region Process
         switch ($actionResource) {
             "CreateResource" {
-                #region Create group
-                $actionMessage = "creating sharedMailbox for resource: $($resource | ConvertTo-Json)"
+                #region Create shared mailbox
+                # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/new-mailbox?view=exchange-ps
+                $actionMessage = "creating shared mailbox for resource: $($resource | ConvertTo-Json)"
 
                 $createSharedMailboxSplatParams = @{
                     Shared             = $true
-                    Name               = $displayName
-                    PrimarySmtpAddress = $primarySmtpAddress
+                    Name               = "smb_$($resource.DisplayName)"
+                    PrimarySmtpAddress = "smb_$(Get-SanitizedGroupName $resource.DisplayName)@schoutenenzn.nl"
                     Verbose            = $false
                     ErrorAction        = "Stop"
                 }
 
                 Write-Verbose "SplatParams: $($createSharedMailboxSplatParams | ConvertTo-Json)"
 
-                if (-Not($actionContext.DryRun -eq $true)) {                    
-                    $response = New-Mailbox @createSharedMailboxSplatParams
-
-                    # Change mapping here
-                    # Set-Mailbox because CustomAttribute1 cannot be set with the new-mailbox command
-                    $updateSharedMailboxSplatParams = @{
-                        Identity         = $response.ExternalDirectoryObjectId 
-                        CustomAttribute1 = $correlationValue
-                        Verbose          = $false
-                        ErrorAction      = "Stop"
-                    }
-                        
-                    $null = Set-Mailbox @updateSharedMailboxSplatParams
+                if (-Not($actionContext.DryRun -eq $true)) {     
+                    $createSharedMailboxResponse = New-Mailbox @createSharedMailboxSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "CreateResource"
-                            Message = "Created sharedMailbox with displayName [$($displayName)] with id [$($response.ExternalDirectoryObjectId)]."
+                            # Action  = "" # Optional
+                            Message = "Created shared mailbox with Name [$($createSharedMailboxSplatParams.Name)] and PrimarySmtpAddress [$($createSharedMailboxSplatParams.PrimarySmtpAddress)] with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
                 else {
-                    Write-Warning "DryRun: Would create sharedMailbox with displayName [$($displayName)] for resource: $($resource | ConvertTo-Json)."
+                    Write-Warning "DryRun: Would create shared mailbox with Name [$($createSharedMailboxSplatParams.Name)] and PrimarySmtpAddress [$($createSharedMailboxSplatParams.PrimarySmtpAddress)] with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                 }
-                #endregion Create group
+                #endregion Create shared mailbox
+
+                # Update shared mailbox after creation, as CustomAttribute1 cannot be set with the new-mailbox command
+                #region Update shared mailbox
+                # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
+                $actionMessage = "updating [$correlationField] with [$correlationValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)"
+
+                $updateSharedMailboxSplatParams = @{
+                    Identity          = $createSharedMailboxResponse.Guid 
+                    $correlationField = $correlationValue
+                    Verbose           = $false
+                    ErrorAction       = "Stop"
+                }
+
+                Write-Verbose "SplatParams: $($updateSharedMailboxSplatParams | ConvertTo-Json)"
+
+                if (-Not($actionContext.DryRun -eq $true)) {     
+                    $updateSharedMailboxResponse = Set-Mailbox @updateSharedMailboxSplatParams
+
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Updated [$correlationField] with [$correlationValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                            IsError = $false
+                        })
+                }
+                else {
+                    Write-Warning "DryRun: Would [$correlationField] with [$correlationValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                }
+                #endregion Update shared mailbox
 
                 break
             }
 
             "CorrelateResource" {
-                #region Correlate group
-                $actionMessage = "correlating to sharedMailbox for resource: $($resource | ConvertTo-Json)"
+                #region Correlate shared mailbox
+                $actionMessage = "correlating to shared mailbox for resource: $($resource | ConvertTo-Json)"
 
-                Write-Verbose "Correlated to sharedMailbox with id [$($correlatedResource.ExternalDirectoryObjectId)] and displayName [$($correlatedResource.DisplayName)] on [$($correlationField)] = [$($correlationValue)]."
-                #endregion Correlate group
+                if (-Not($actionContext.DryRun -eq $true)) {
+                    Write-Verbose "Correlated to shared mailbox with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
+                }
+                else {
+                    Write-Warning "DryRun: Would correlate to shared mailbox with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
+                }
+                #endregion Correlate shared mailbox
 
                 break
-            }
-
-            # Exmple how to update a resource
-            # "CorrelateUpdateResource" {
-            #     #region Correlate update group
-            #     $actionMessage = "updating to sharedMailbox for resource: $($resource | ConvertTo-Json)"   
-
-            #     $updateSharedMailboxSplatParams = @{
-            #         Identity    = $correlatedResource.ExternalDirectoryObjectId
-            #         DisplayName = $displayName
-            #         Name        = $displayName
-            #     }
-                    
-            #     Write-Verbose "SplatParams: $($updateSharedMailboxSplatParams | ConvertTo-Json)"
-
-            #     if (-Not($actionContext.DryRun -eq $true)) {      
-
-            #         $null = Set-Mailbox @updateSharedMailboxSplatParams
-
-            #         $outputContext.AuditLogs.Add([PSCustomObject]@{
-            #                 Action      = "CreateResource"
-            #                 Message     = "Updated sharedMailbox with id [$($correlatedResource.ExternalDirectoryObjectId)]. From [$($correlatedResource.DisplayName)] to [$displayName]"
-            #                 IsError     = $false
-            #                 Verbose     = $false
-            #                 ErrorAction = "Stop"
-            #             })
-            #     }
-            #     else {
-            #         Write-Warning "DryRun: Would update sharedMailbox with id [$($correlatedResource.ExternalDirectoryObjectId)]. From [$($correlatedResource.DisplayName)] to [$displayName]"
-            #     }
-            # }
-
-            "MultipleFoundResource" {
-
-                $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Action  = "CreateResource"
-                        Message = "Multiple sharedMailboxes found on [$($correlationField)] = [$($correlationValue)]. DisplayNames: [$($correlatedResource.DisplayName -join ', ')]"
-                        IsError = $false
-                    })
-
             }
         }
         #endregion Process
@@ -407,7 +360,21 @@ catch {
             IsError = $true
         })
 }
-finally { 
+finally {
+    #region Disconnect from Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
+
+    $deleteExchangeSessionSplatParams = @{
+        Confirm     = $false
+        ErrorAction = "Stop"
+    }
+
+    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    
+    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    #endregion Disconnect from Microsoft Exchange Online
+
     # Check if auditLogs contains errors, if no errors are found, set success to true
     if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
         $outputContext.Success = $true
