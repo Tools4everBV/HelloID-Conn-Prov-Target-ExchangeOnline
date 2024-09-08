@@ -1,9 +1,10 @@
 #################################################
 # HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-List
 # List groups as permissions
-# Currently only Mail-enabled Security Group of Distribution Group are supported by the Exchange Online Management module
+# Currently only Mail-enabled Security Groups and Distribution Groups are supported by the Exchange Online Management module
 # PowerShell V2
 #################################################
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -74,48 +75,51 @@ function Resolve-ExchangeOnlineError {
     }
 }
 
-function Resolve-HTTPError {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory,
-            ValueFromPipeline
-        )]
-        [object]$ErrorObject
-    )
-    process {
-        $httpErrorObj = [PSCustomObject]@{
-            FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
-            MyCommand             = $ErrorObject.InvocationInfo.MyCommand
-            RequestUri            = $ErrorObject.TargetObject.RequestUri
-            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
-            ErrorMessage          = ''
+function Convert-StringToBoolean($obj) {
+    if ($obj -is [PSCustomObject]) {
+        foreach ($property in $obj.PSObject.Properties) {
+            $value = $property.Value
+            if ($value -is [string]) {
+                $lowercaseValue = $value.ToLower()
+                if ($lowercaseValue -eq "true") {
+                    $obj.$($property.Name) = $true
+                }
+                elseif ($lowercaseValue -eq "false") {
+                    $obj.$($property.Name) = $false
+                }
+            }
+            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
+                $obj.$($property.Name) = Convert-StringToBoolean $value
+            }
+            elseif ($value -is [System.Collections.IList]) {
+                for ($i = 0; $i -lt $value.Count; $i++) {
+                    $value[$i] = Convert-StringToBoolean $value[$i]
+                }
+                $obj.$($property.Name) = $value
+            }
         }
-        if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.Powershell.Commands.HttpResponseException') {
-            $httpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
-        }
-        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
-            $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
-        }
-        Write-Output $httpErrorObj
     }
+    return $obj
 }
 #endregion functions
 
 try {
     #region Import module
-    $actionMessage = "importing module"
+    $actionMessage = "importing module [ExchangeOnlineManagement]"
+    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
-    Import-Module @importModuleSplatParams
+
+    $importModuleResponse = Import-Module @importModuleSplatParams
+
     Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
+    #endregion Create access token
 
     #region Create access token
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "creating access token"
 
     $createAccessTokenBody = @{
@@ -136,23 +140,19 @@ try {
         ErrorAction     = "Stop"
     }
 
-    $createdAccessToken = Invoke-RestMethod @createAccessTokenSplatParams
-    $accessToken = $createdAccessToken.access_token
+    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token. Result: $($accessToken | ConvertTo-Json)"
+    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
     #endregion Create access token
 
-    #region Connect to Exchange
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to exchange"
-
-    # Connect to Exchange Online in an unattended scripting scenario using an access token.
-    Write-Verbose "Connecting to Exchange Online"
+    #region Connect to Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
 
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $accessToken
+        AccessToken           = $createAccessTokenResonse.access_token
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false
@@ -162,15 +162,14 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createdExchangeSession = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        
-    Write-Verbose "Successfully connected to Exchange Online"
-    #endregion Connect to Exchange
+    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    
+    Write-Verbose "Connected to Microsoft Exchange Online"
+    #endregion Connect to Microsoft Exchange Online
 
-    #region Mail-enabled Security Groups
-    #region Get Exchange Online Mail-enabled Security Groups
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
-    $actionMessage = "querying Microsoft Exchange Online Mail-enabled Security Groups"
+    #region Get Mail-enabled Security Groups
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
+    $actionMessage = "querying Microsoft Mail-enabled Security Groups"
 
     $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams = @{
         Filter      = "RecipientTypeDetails -eq 'MailUniversalSecurityGroup' -and IsDirSynced -eq 'False'"
@@ -178,16 +177,17 @@ try {
         ErrorAction = "Stop"
     }
 
-    $microsoftExchangeOnlineMailEnabledSecurityGroups = $null
-    $microsoftExchangeOnlineMailEnabledSecurityGroups = Get-DistributionGroup @getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams
+    $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse = $null
+    $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse = Get-DistributionGroup @getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams
+    $microsoftExchangeOnlineMailEnabledSecurityGroups = $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse | Select-Object Guid, DisplayName
 
-    Write-Information "Queried Microsoft Exchange Online Mail-enabled Security Groups. Result count: $(($microsoftExchangeOnlineMailEnabledSecurityGroups | Measure-Object).Count)"
-    #endregion Get Microsoft Exchange Online Mail-enabled Security Groups
+    Write-Information "Queried Microsoft Mail-enabled Security Groups. Result count: $(($microsoftExchangeOnlineMailEnabledSecurityGroups | Measure-Object).Count)"
+    #endregion Get Microsoft Mail-enabled Security Groups
 
     #region Send results to HelloID
     $microsoftExchangeOnlineMailEnabledSecurityGroups | ForEach-Object {
         # Shorten DisplayName to max. 100 chars
-        $displayName = "Mail-enabled Security Group - $($_.displayName)"
+        $displayName = "Mail-enabled Security Group - $($_.DisplayName)"
         $displayName = $displayName.substring(0, [System.Math]::Min(100, $displayName.Length)) 
         
         $outputContext.Permissions.Add(
@@ -195,19 +195,17 @@ try {
                 displayName    = $displayName
                 identification = @{
                     Id   = $_.Guid
-                    Name = $_.displayName
+                    Name = $_.DisplayName
                     Type = "Mail-enabled Security Group"
                 }
             }
         )
     }
     #endregion Send results to HelloID
-    #endregion Mail-enabled Security Groups
 
-    #region Distribution Groups
-    #region Get Exchange Online Distribution Groups
+    #region Get Distribution Groups
     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
-    $actionMessage = "querying Microsoft Exchange Online Distribution Groups"
+    $actionMessage = "querying Microsoft Distribution Groups"
 
     $getMicrosoftExchangeOnlineDistributionGroupsSplatParams = @{
         Filter      = "RecipientTypeDetails -ne 'MailUniversalSecurityGroup' -and IsDirSynced -eq 'False'"
@@ -215,16 +213,18 @@ try {
         ErrorAction = "Stop"
     }
 
-    $microsoftExchangeOnlineDistributionGroups = $null
-    $microsoftExchangeOnlineDistributionGroups = Get-DistributionGroup @getMicrosoftExchangeOnlineDistributionGroupsSplatParams
+    $getMicrosoftExchangeOnlineDistributionGroupsResponse = $null
+    $getMicrosoftExchangeOnlineDistributionGroupsResponse = Get-DistributionGroup @getMicrosoftExchangeOnlineDistributionGroupsSplatParams
+    $microsoftExchangeOnlineDistributionGroups = $getMicrosoftExchangeOnlineDistributionGroupsResponse | Select-Object Guid, DisplayName
 
-    Write-Information "Queried Microsoft Exchange Online Distribution Groups. Result count: $(($microsoftExchangeOnlineDistributionGroups | Measure-Object).Count)"
-    #endregion Get Microsoft Exchange Online Distribution Groups
+
+    Write-Information "Queried Microsoft Distribution Groups. Result count: $(($microsoftExchangeOnlineDistributionGroups | Measure-Object).Count)"
+    #endregion Get Microsoft Distribution Groups
 
     #region Send results to HelloID
     $microsoftExchangeOnlineDistributionGroups | ForEach-Object {
         # Shorten DisplayName to max. 100 chars
-        $displayName = "Distribution Group - $($_.displayName)"
+        $displayName = "Distribution Group - $($_.DisplayName)"
         $displayName = $displayName.substring(0, [System.Math]::Min(100, $displayName.Length)) 
         
         $outputContext.Permissions.Add(
@@ -232,14 +232,13 @@ try {
                 displayName    = $displayName
                 identification = @{
                     Id   = $_.Guid
-                    Name = $_.displayName
+                    Name = $_.DisplayName
                     Type = "Distribution Group"
                 }
             }
         )
     }
     #endregion Send results to HelloID
-    #endregion Distribution Groups
 }
 catch {
     $ex = $PSItem
@@ -247,16 +246,33 @@ catch {
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-        Write-Warning "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     }
     else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-        Write-Warning "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-
+    
     # Set Success to false
     $outputContext.Success = $false
 
+    Write-Warning $warningMessage
+
     # Required to write an error as the listing of permissions doesn't show auditlog
     Write-Error $auditMessage
+}
+finally {
+    #region Disconnect from Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
+
+    $deleteExchangeSessionSplatParams = @{
+        Confirm     = $false
+        ErrorAction = "Stop"
+    }
+
+    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    
+    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    #endregion Disconnect from Microsoft Exchange Online
 }
