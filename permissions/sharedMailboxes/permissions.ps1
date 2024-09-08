@@ -3,6 +3,7 @@
 # List shared mailboxes as permissions
 # PowerShell V2
 #####################################################
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -74,57 +75,60 @@ function Resolve-ExchangeOnlineError {
     }
 }
 
-function Resolve-HTTPError {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory,
-            ValueFromPipeline
-        )]
-        [object]$ErrorObject
-    )
-    process {
-        $httpErrorObj = [PSCustomObject]@{
-            FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
-            MyCommand             = $ErrorObject.InvocationInfo.MyCommand
-            RequestUri            = $ErrorObject.TargetObject.RequestUri
-            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
-            ErrorMessage          = ''
+function Convert-StringToBoolean($obj) {
+    if ($obj -is [PSCustomObject]) {
+        foreach ($property in $obj.PSObject.Properties) {
+            $value = $property.Value
+            if ($value -is [string]) {
+                $lowercaseValue = $value.ToLower()
+                if ($lowercaseValue -eq "true") {
+                    $obj.$($property.Name) = $true
+                }
+                elseif ($lowercaseValue -eq "false") {
+                    $obj.$($property.Name) = $false
+                }
+            }
+            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
+                $obj.$($property.Name) = Convert-StringToBoolean $value
+            }
+            elseif ($value -is [System.Collections.IList]) {
+                for ($i = 0; $i -lt $value.Count; $i++) {
+                    $value[$i] = Convert-StringToBoolean $value[$i]
+                }
+                $obj.$($property.Name) = $value
+            }
         }
-        if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.Powershell.Commands.HttpResponseException') {
-            $httpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
-        }
-        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
-            $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
-        }
-        Write-Output $httpErrorObj
     }
+    return $obj
 }
 #endregion functions
 
 try {
     #region Import module
-    $actionMessage = "importing module"
+    $actionMessage = "importing module [ExchangeOnlineManagement]"
+    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
-    Import-Module @importModuleSplatParams
+
+    $importModuleResponse = Import-Module @importModuleSplatParams
+
     Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
-    
+    #endregion Create access token
+
     #region Create access token
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "creating access token"
-    
+
     $createAccessTokenBody = @{
         grant_type    = "client_credentials"
         client_id     = $actionContext.Configuration.AppId
         client_secret = $actionContext.Configuration.AppSecret
         resource      = "https://outlook.office365.com"
     }
-    
+
     $createAccessTokenSplatParams = @{
         Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
         Headers         = $headers
@@ -135,24 +139,20 @@ try {
         Verbose         = $false
         ErrorAction     = "Stop"
     }
-    
-    $createdAccessToken = Invoke-RestMethod @createAccessTokenSplatParams
-    $accessToken = $createdAccessToken.access_token
-    
-    Write-Verbose "Created access token. Result: $($accessToken | ConvertTo-Json)"
+
+    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
+
+    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
     #endregion Create access token
-    
-    #region Connect to Exchange
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to exchange"
-    
-    # Connect to Exchange Online in an unattended scripting scenario using an access token.
-    Write-Verbose "Connecting to Exchange Online"
-    
+
+    #region Connect to Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
+
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $accessToken
+        AccessToken           = $createAccessTokenResonse.access_token
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false
@@ -161,18 +161,17 @@ try {
         SkipLoadingFormatData = $true
         ErrorAction           = "Stop"
     }
+
+    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
     
-    $createdExchangeSession = Connect-ExchangeOnline @createExchangeSessionSplatParams
-            
-    Write-Verbose "Connected to Exchange Online"
-    #endregion Connect to Exchange
-    #region Shared Mailboxes
-    #region Get Exchange Online Shared Mailboxes
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
+    Write-Verbose "Connected to Microsoft Exchange Online"
+    #endregion Connect to Microsoft Exchange Online
+
+    #region Get Shared Mailboxes
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
     $actionMessage = "querying Microsoft Exchange Online Shared Mailboxes"
     
     $getMicrosoftExchangeOnlineSharedMailboxesSplatParams = @{
-        # Filter               = "Name -like `"*Shared*`""
         Properties           = @("Guid", "DisplayName")
         RecipientTypeDetails = "SharedMailbox"
         ResultSize           = "Unlimited"
@@ -180,11 +179,12 @@ try {
         ErrorAction          = "Stop"
     }
 
-    $microsoftExchangeOnlineSharedMailboxes = $null
-    $microsoftExchangeOnlineSharedMailboxes = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
+    $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
+    $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
+    $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object Guid, DisplayName
 
     Write-Information "Queried Microsoft Exchange Online Shared Mailboxes. Result count: $(($microsoftExchangeOnlineSharedMailboxes | Measure-Object).Count)"
-    #endregion Get Microsoft Exchange Online Shared Mailboxes
+    #endregion Get Shared Mailboxes
 
     #region Send results to HelloID
     $microsoftExchangeOnlineSharedMailboxes | ForEach-Object {
@@ -196,16 +196,15 @@ try {
             @{
                 displayName    = $displayName
                 identification = @{
-                    Id          = $_.Guid
-                    Name        = $_.DisplayName
-                    Type        = "Shared Mailbox"
-                    Permissions = @("Full Access", "Send As") # Options:  Full Access,Send As, Send on Behalf
+                    Id           = $_.Guid
+                    Name         = $_.DisplayName
+                    Type         = "Shared Mailbox"
+                    AccessRights = @("Full Access", "Send As") # Options:  Full Access,Send As, Send on Behalf
                 }
             }
         )
     }
     #endregion Send results to HelloID
-    #endregion Shared Mailboxes
 }
 catch {
     $ex = $PSItem
@@ -213,16 +212,33 @@ catch {
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-        Write-Warning "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     }
     else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-        Write-Warning "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     
     # Set Success to false
     $outputContext.Success = $false
-    
+
+    Write-Warning $warningMessage
+
     # Required to write an error as the listing of permissions doesn't show auditlog
     Write-Error $auditMessage
+}
+finally {
+    #region Disconnect from Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
+
+    $deleteExchangeSessionSplatParams = @{
+        Confirm     = $false
+        ErrorAction = "Stop"
+    }
+
+    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    
+    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    #endregion Disconnect from Microsoft Exchange Online
 }

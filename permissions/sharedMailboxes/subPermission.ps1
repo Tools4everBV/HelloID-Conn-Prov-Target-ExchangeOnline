@@ -1,6 +1,5 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-subPermissions-SharedMailboxes
-#
 # Grant and Revoke shared mailbox permissions (full access, send as or send on behalf) from account
 # PowerShell V2
 #################################################
@@ -145,20 +144,30 @@ function Resolve-HTTPError {
 
 #region Get Access Token
 try {
+    #region Verify account reference
+    $actionMessage = "verifying account reference"
+    
+    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
+        throw "The account reference could not be found"
+    }
+    #endregion Verify account reference
+
     #region Import module
-    $actionMessage = "importing module"
+    $actionMessage = "importing module [ExchangeOnlineManagement]"
+    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
-    Import-Module @importModuleSplatParams
+
+    $importModuleResponse = Import-Module @importModuleSplatParams
+
     Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
+    #endregion Create access token
 
     #region Create access token
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "creating access token"
 
     $createAccessTokenBody = @{
@@ -179,23 +188,19 @@ try {
         ErrorAction     = "Stop"
     }
 
-    $createdAccessToken = Invoke-RestMethod @createAccessTokenSplatParams
-    $accessToken = $createdAccessToken.access_token
+    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token. Result: $($accessToken | ConvertTo-Json)"
+    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
     #endregion Create access token
 
-    #region Connect to Exchange
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to exchange"
-
-    # Connect to Exchange Online in an unattended scripting scenario using an access token.
-    Write-Verbose "Connecting to Exchange Online"
+    #region Connect to Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
 
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $accessToken
+        AccessToken           = $createAccessTokenResonse.access_token
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false
@@ -205,10 +210,10 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createdExchangeSession = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        
-    Write-Verbose "Successfully connected to Exchange Online"
-    #endregion Connect to Exchange
+    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    
+    Write-Verbose "Connected to Microsoft Exchange Online"
+    #endregion Connect to Microsoft Exchange Online
 
     #region Define desired permissions
     $actionMessage = "calculating desired permission"
@@ -217,24 +222,17 @@ try {
     if (-Not($actionContext.Operation -eq "revoke")) {
         # Example: Contract Based Logic:
         foreach ($contract in $personContext.Person.Contracts) {
-            $actionMessage = "querying Exchange Online Sharedmailbox for resource: $($resource | ConvertTo-Json)"
-
             Write-Verbose "Contract: $($contract.ExternalId). In condition: $($contract.Context.InConditions)"
             if ($contract.Context.InConditions -OR ($actionContext.DryRun -eq $true)) {
+                $actionMessage = "querying Exchange Online Sharedmailbox for department: $($contract.Department | ConvertTo-Json)"
+                
                 # Get group to use objectGuid to avoid name change issues
                 # Avaliable properties: https://learn.microsoft.com/en-us/powershell/exchange/cmdlet-property-sets?view=exchange-ps#get-exomailbox-property-sets
-                $correlationField = "DisplayName" # Examples "Name" "CustomAttribute1"
+                $correlationField = "CustomAttribute1"
+                $correlationValue = $contract.Department.ExternalId
 
-                # Example: department_<departmentname>
-                $correlationValue = $contract.Department.DisplayName
-
-                # Example: title_<titlename>
-                # $correlationValue = "title_" + $contract.Title.Name
-                
-                # Sanitize group name, e.g. replace " - " with "_" or other sanitization actions 
-                $correlationValue = Get-SanitizedGroupName -Name $correlationValue
-
-                $getExOSharedMailboxesSplatParams = @{
+                $getMicrosoftExchangeOnlineSharedMailboxesSplatParams = @{
+                    Properties           = (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
                     Filter               = "$correlationField -eq '$correlationValue'"
                     RecipientTypeDetails = "SharedMailbox"
                     ResultSize           = "Unlimited"
@@ -244,17 +242,18 @@ try {
                 
                 Write-Verbose "Quering ExO Mailbox where [$correlationField -eq '$correlationValue']"
 
-                $sharedMailboxes = $null
-                $sharedMailboxes = Get-EXOMailbox @getExOSharedMailboxesSplatParams
+                $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
+                $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
+                $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
     
-                if ($sharedMailboxes.Guid.count -eq 0) {
+                if ($microsoftExchangeOnlineSharedMailboxes.Guid.count -eq 0) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
                             Message = "No SharedMailbox found where [$($correlationField)] = [$($correlationValue)]"
                             IsError = $true
                         })
                 }
-                elseif ($sharedMailboxes.Guid.count -gt 1) {
+                elseif ($microsoftExchangeOnlineSharedMailboxes.Guid.count -gt 1) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
                             Message = "Multiple SharedMailboxes found where [$($correlationField)] = [$($correlationValue)]. Please correct this so the SharedMailboxes are unique."
@@ -262,46 +261,125 @@ try {
                         })
                 }
                 else {
-                    # Add group to desired permissions with the id as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
-                    $desiredPermissions["$($sharedMailboxes.Guid)"] = $sharedMailboxes.DisplayName
+                    $accessRights = @("FullAccess", "SendAs") # Options:  FullAccess, SendAs, SendOnBehalf
+                    foreach ($accessRight in $accessRights) {
+                        # Add shared mailbox to desired permissions with the desired access right + the guid as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
+                        $desiredPermissions["$accessRight-$($microsoftExchangeOnlineSharedMailboxes.Guid)"] = "$accessRight-$($microsoftExchangeOnlineSharedMailboxes.DisplayName)"
+                    }
                 }
             }
         }
     }
     #endregion Define desired permissions
     
-    Write-Warning ("Desired Permissions: {0}" -f ($desiredPermissions.Values | ConvertTo-Json))
-    Write-Warning ("Existing Permissions: {0}" -f ($actionContext.CurrentPermissions.DisplayName | ConvertTo-Json))
+    if ($actionContext.DryRun -eq $true) {
+        Write-Warning ("Desired Permissions: {0}" -f ($desiredPermissions | ConvertTo-Json))
+        Write-Warning ("Existing Permissions: {0}" -f ($actionContext.CurrentPermissions | ConvertTo-Json))
+    }
 
     #region Compare current with desired permissions and revoke permissions
     $newCurrentPermissions = @{}
-    foreach ($permission in $currentPermissions.GetEnumerator()) {    
+    foreach ($permission in $currentPermissions.GetEnumerator()) {
         if (-Not $desiredPermissions.ContainsKey($permission.Name) -AND $permission.Name -ne "No permissions defined") {
-            #region Revoke permission from account
-            # Revoke FullAccess
-            $actionMessage = "revoking sharedMailbox [FullAccess] [$($permission.Value)] with id [$($permission.Name)] from account"
-
-            $revokeFullAccessPermissionSplatParams = @{
-                Identity        = $permission.Name
-                User            = $actionContext.References.Account
-                AccessRights    = 'FullAccess'
-                InheritanceType = 'All'
-                Confirm         = $false
-                Verbose         = $false
-                ErrorAction     = 'Stop'
-            } 
-
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($revokeFullAccessPermissionSplatParams | ConvertTo-Json)"
-
+            #region Revoke Mailbox permission
+            if ($permission.Name.StartsWith("FullAccess-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
+                #region Revoke Full Access from account
                 try {
-                    $removeFullAccessPermission = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
+                    $mailboxId = $permission.Name -replace 'FullAccess-', ''
+                    $mailboxName = $permission.Name -replace 'FullAccess-', ''
 
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Revoked sharedMailbox [FullAccess] [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                            IsError = $false
-                        })
+                    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-mailboxpermission?view=exchange-ps
+                    $actionMessage = "revoking [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+                    
+                    $revokeFullAccessPermissionSplatParams = @{
+                        Identity        = $mailboxId
+                        User            = $actionContext.References.Account
+                        AccessRights    = 'FullAccess'
+                        InheritanceType = 'All'
+                        Confirm         = $false
+                        Verbose         = $false
+                        ErrorAction     = "Stop"
+                    }
+
+                    if (-Not($actionContext.DryRun -eq $true)) {
+                        Write-Verbose "SplatParams: $($revokeFullAccessPermissionSplatParams | ConvertTo-Json)"
+
+                        $revokeFullAccessPermissionResponse = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
+
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Revoked [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        Write-Warning "DryRun: Would revoke [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                    }
+                }
+                catch {
+                    $ex = $PSItem
+                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
+                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
+                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
+                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+                    }
+                    else {
+                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
+                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+                    }
+                    
+                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Skipped $($actionMessage). Reason: User no longer exists."
+                                IsError = $false
+                            })
+                    }
+                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        throw $auditMessage
+                    }
+                }
+            }
+            elseif ($permission.Name.StartsWith("SendAs-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
+                #region Revoke Send As from account
+                try {
+                    $mailboxId = $permission.Name -replace 'SendAs-', ''
+                    $mailboxName = $permission.Name -replace 'SendAs-', ''
+
+                    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-recipientpermission?view=exchange-ps
+                    $actionMessage = "revoking [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+
+                    $revokeSendAsPermissionSplatParams = @{
+                        Identity     = $mailboxId
+                        Trustee      = $actionContext.References.Account
+                        AccessRights = 'SendAs'
+                        Confirm      = $false
+                        Verbose      = $false
+                        ErrorAction  = "Stop"
+                    }
+
+                    if (-Not($actionContext.DryRun -eq $true)) {
+                        Write-Verbose "SplatParams: $($revokeSendAsPermissionSplatParams | ConvertTo-Json)"
+
+                        $revokeSendAsPermissionresponse = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
+
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Revoked [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        Write-Warning "DryRun: Would revoke [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                    }
                 }
                 catch {
                     $ex = $PSItem
@@ -318,329 +396,208 @@ try {
                 
                     if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
+                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
+                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
-                        Write-Warning $warningMessage
+                        throw $auditMessage
+                    }
+                }
+                #endregion Revoke Send As from account
+            }
+            elseif ($permission.Name.StartsWith("SendOnBehalf-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
+                #region Revoke Send On Behalf from account
+                try {
+                    $mailboxId = $permission.Name -replace 'SendOnBehalf-', ''
+                    $mailboxName = $permission.Name -replace 'SendOnBehalf-', ''
+
+                    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
+                    $actionMessage = "revoking [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+
+                    $revokeSendOnBehalfPermissionSplatParams = @{
+                        Identity            = $mailboxId
+                        GrantSendOnBehalfTo = @{remove = "$($actionContext.References.Account)" }
+                        Confirm             = $false
+                        Verbose             = $false
+                        ErrorAction         = "Stop"
+                    }
+
+                    if (-Not($actionContext.DryRun -eq $true)) {
+                        Write-Verbose "SplatParams: $($revokeSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
+
+                        $revokeSendOnBehalfPermissionResponse = Set-Mailbox @revokeSendOnBehalfPermissionSplatParams
+
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Revoked [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        Write-Warning "DryRun: Would revoke [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                    }
+                }
+                catch {
+                    $ex = $PSItem
+                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
+                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
+                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
+                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+                    }
+                    else {
+                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
+                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+                    }
                 
-                        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = $auditMessage
-                                IsError = $true
-                            })
-                    }   
-                }
-            }
-            else {
-                Write-Warning "DryRun: Would revoke sharedMailbox [FullAccess] [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
-
-            # Revoke SendAs
-            $actionMessage = "revoking sharedMailbox [SendAs] [$($permission.Value)] with id [$($permission.Name)] from account"
-
-            $revokeSendAsPermissionSplatParams = @{
-                Identity     = $permission.Name
-                Trustee      = $actionContext.References.Account
-                AccessRights = 'SendAs'
-                Confirm      = $false
-                Verbose      = $false
-                ErrorAction  = 'Stop'
-            } 
-
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($revokeSendAsPermissionSplatParams | ConvertTo-Json)"
-
-                try {
-                    $removeSendAsPermission = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
-
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Revoked sharedMailbox [SendAs] [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                            IsError = $false
-                        })
-                }
-                catch {
-                    $ex = $PSItem
-                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
-                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-                    }
-                    else {
-                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-                    }
-    
                     if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
+                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
+                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
-                        Write-Warning $warningMessage
-    
-                        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = $auditMessage
-                                IsError = $true
-                            })
-                    }   
+                        throw $auditMessage
+                    }
                 }
+                #endregion Revoke Send On Behalf from account
             }
-            else {
-                Write-Warning "DryRun: Would revoke sharedMailbox [SendAs] [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
-
-            # Revoke SendonBehalf
-            $actionMessage = "revoking sharedMailbox [SendonBehalf] [$($permission.Value)] with id [$($permission.Name)] from account"
-
-            $revokeSendonBehalfPermissionSplatParams = @{
-                Identity            = $permission.Name
-                GrantSendOnBehalfTo = @{remove = "$($actionContext.References.Account)" }
-                Confirm             = $false
-                Verbose             = $false
-                ErrorAction         = 'Stop'
-            } 
-
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($revokeSendonBehalfPermissionSplatParams | ConvertTo-Json)"
-
-                try {
-                    $removeSendonBehalfPermission = Set-Mailbox @revokeSendonBehalfPermissionSplatParams
-
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Revoked sharedMailbox [SendonBehalf] [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                            IsError = $false
-                        })
-                }
-                catch {
-                    $ex = $PSItem
-                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
-                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-                    }
-                    else {
-                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-                    }
-
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
-                        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Skipped $($actionMessage). Reason: User no longer exists."
-                                IsError = $false
-                            })
-                    }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
-                        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
-                                IsError = $false
-                            })
-                    }
-                    else {
-                        Write-Warning $warningMessage
-
-                        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                Action  = "RevokePermission"
-                                Message = $auditMessage
-                                IsError = $true
-                            })
-                    }   
-                }
-            }
-            else {
-                Write-Warning "DryRun: Would revoke sharedMailbox [SendonBehalf] [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
-            #endregion Revoke permission from account
+            #endregion Revoke Mailbox permission
         }
         else {
             $newCurrentPermissions[$permission.Name] = $permission.Value
         }
     }
     #endregion Compare current with desired permissions and revoke permissions
-
+    
     #region Compare desired with current permissions and grant permissions
     foreach ($permission in $desiredPermissions.GetEnumerator()) {
         $outputContext.SubPermissions.Add([PSCustomObject]@{
                 DisplayName = $permission.Value
                 Reference   = [PSCustomObject]@{ Id = $permission.Name }
             })
-    
+
         if (-Not $currentPermissions.ContainsKey($permission.Name)) {
-            #region Grant permission to account
-            # Grant FullAccess
-            $actionMessage = "granting sharedMailbox [FullAccess] [$($permission.Value)] with id [$($permission.Name)] to account"
+            #region Grant Mailbox permission
+            if ($permission.Name.StartsWith("FullAccess-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
+                #region Grant Full Access to account
+                $mailboxId = $permission.Name -replace 'FullAccess-', ''
+                $mailboxName = $permission.Name -replace 'FullAccess-', ''
 
-            $grantFullAccessPermissionSplatParams = @{
-                Identity        = $permission.Name
-                User            = $actionContext.References.Account
-                AccessRights    = 'FullAccess'
-                InheritanceType = 'All'
-                AutoMapping     = $true
-                Confirm         = $false
-                Verbose         = $false
-                ErrorAction     = 'Stop'
-            } 
+                # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-mailboxpermission?view=exchange-ps
+                $actionMessage = "granting [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($grantFullAccessPermissionSplatParams | ConvertTo-Json)"
+                $grantFullAccessPermissionSplatParams = @{
+                    Identity        = $mailboxId
+                    User            = $actionContext.References.Account
+                    AccessRights    = 'FullAccess'
+                    InheritanceType = 'All'
+                    AutoMapping     = $true
+                    Confirm         = $false
+                    Verbose         = $false
+                    ErrorAction     = "Stop"
+                }
 
-                try {
-                    $addFullAccessPermission = Add-MailboxPermission @grantFullAccessPermissionSplatParams
+                if (-Not($actionContext.DryRun -eq $true)) {
+                    Write-Verbose "SplatParams: $($grantFullAccessPermissionSplatParams | ConvertTo-Json)"
+
+                    $grantFullAccessPermissionResponse = Add-MailboxPermission @grantFullAccessPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Granted sharedMailbox [FullAccess] [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                            # Action  = "" # Optional
+                            Message = "Granted [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
-                catch {
-                    $ex = $PSItem
-                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
-                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-                    }
-                    else {
-                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-                    }
-                    Write-Warning $warningMessage
-                
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = $auditMessage
-                            IsError = $true
-                        })   
+                else {
+                    Write-Warning "DryRun: Would grant [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                 }
+                #endregion Grant Full Access to account
             }
-            else {
-                Write-Warning "DryRun: Would grant sharedMailbox [FullAccess] [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
+            elseif ($permission.Name.StartsWith("SendAs-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
+                #region Grant Send As to account
+                $mailboxId = $permission.Name -replace 'SendAs-', ''
+                $mailboxName = $permission.Name -replace 'SendAs-', ''
 
-            # Grant SendAs
-            $actionMessage = "granting sharedMailbox [SendAs] [$($permission.Value)] with id [$($permission.Name)] to account"
+                # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-recipientpermission?view=exchange-ps
+                $actionMessage = "granting [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
-            $grantSendAsPermissionSplatParams = @{
-                Identity     = $permission.Name
-                Trustee      = $actionContext.References.Account
-                AccessRights = 'SendAs'
-                Confirm      = $false
-                Verbose      = $false
-                ErrorAction  = 'Stop'
-            } 
+                $grantSendAsPermissionSplatParams = @{
+                    Identity     = $mailboxId
+                    Trustee      = $actionContext.References.Account
+                    AccessRights = 'SendAs'
+                    Confirm      = $false
+                    Verbose      = $false
+                    ErrorAction  = "Stop"
+                }
 
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($grantSendAsPermissionSplatParams | ConvertTo-Json)"
+                if (-Not($actionContext.DryRun -eq $true)) {
+                    Write-Verbose "SplatParams: $($grantSendAsPermissionSplatParams | ConvertTo-Json)"
 
-                try {
-                    $addSendAsPermission = Add-RecipientPermission @grantSendAsPermissionSplatParams
+                    $grantSendAsPermissionResponse = Add-RecipientPermission @grantSendAsPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = "Granted sharedMailbox [SendAs] [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                            # Action  = "" # Optional
+                            Message = "Granted [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
-                catch {
-                    $ex = $PSItem
-                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
-                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-                    }
-                    else {
-                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-                    }
-                    Write-Warning $warningMessage
-                
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = $auditMessage
-                            IsError = $true
-                        })   
+                else {
+                    Write-Warning "DryRun: Would grant [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                 }
+                #endregion Grant Send As to account
             }
-            else {
-                Write-Warning "DryRun: Would grant sharedMailbox [SendAs] [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
+            elseif ($permission.Name.StartsWith("SendOnBehalf-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
+                #region Grant Send On Behalf to account
+                $mailboxId = $permission.Name -replace 'SendOnBehalf-', ''
+                $mailboxName = $permission.Name -replace 'SendOnBehalf-', ''
 
-            # Grant SendonBehalf
-            $actionMessage = "granting sharedMailbox [SendonBehalf] [$($permission.Value)] with id [$($permission.Name)] to account"
+                # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
+                $actionMessage = "granting [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
-            $grantSendonBehalfPermissionSplatParams = @{
-                Identity            = $permission.Name
-                GrantSendOnBehalfTo = @{add = "$($actionContext.References.Account)" }
-                Confirm             = $false
-                Verbose             = $false
-                ErrorAction         = 'Stop'
-            } 
+                $grantSendOnBehalfPermissionSplatParams = @{
+                    Identity            = $mailboxId
+                    GrantSendOnBehalfTo = @{add = "$($actionContext.References.Account)" }
+                    Confirm             = $false
+                    Verbose             = $false
+                    ErrorAction         = "Stop"
+                }
 
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($grantSendonBehalfPermissionSplatParams | ConvertTo-Json)"
+                if (-Not($actionContext.DryRun -eq $true)) {
+                    Write-Verbose "SplatParams: $($grantSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
 
-                try {
-                    $addSendonBehalfPermission = Set-Mailbox @grantSendonBehalfPermissionSplatParams
+                    $grantSendOnBehalfPermissionResponse = Set-Mailbox @grantSendOnBehalfPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "RevokePermission"
-                            Message = "Granted sharedMailbox [SendonBehalf] [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                            # Action  = "" # Optional
+                            Message = "Granted [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
-                catch {
-                    $ex = $PSItem
-                    if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-                        $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-                        $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
-                        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-                        $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-                    }
-                    else {
-                        $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-                        $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-                    }
-                    Write-Warning $warningMessage
-                
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            Action  = "GrantPermission"
-                            Message = $auditMessage
-                            IsError = $true
-                        })   
+                else {
+                    Write-Warning "DryRun: Would grant [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                 }
+                #endregion Grant Send On Behalf to account
             }
-            else {
-                Write-Warning "DryRun: Would grant sharedMailbox [SendonBehalf] [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
-            #endregion Grant permission to account
-        }    
+            #endregion Grant Mailbox permission
+        }
     }
     #endregion Compare desired with current permissions and grant permissions
 }
@@ -665,7 +622,21 @@ catch {
             IsError = $true
         })
 }
-finally { 
+finally {
+    #region Disconnect from Microsoft Exchange Online
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
+    $actionMessage = "connecting to Microsoft Exchange Online"
+
+    $deleteExchangeSessionSplatParams = @{
+        Confirm     = $false
+        ErrorAction = "Stop"
+    }
+
+    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    
+    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    #endregion Disconnect from Microsoft Exchange Online
+
     # Handle case of empty defined dynamic permissions.  Without this the entitlement will error.
     if ($actionContext.Operation -match "update|grant" -AND $outputContext.SubPermissions.count -eq 0) {
         $outputContext.SubPermissions.Add([PSCustomObject]@{
