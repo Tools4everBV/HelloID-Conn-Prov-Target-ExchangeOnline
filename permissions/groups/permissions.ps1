@@ -209,6 +209,7 @@ try {
 
     $getMicrosoftExchangeOnlineDistributionGroupsSplatParams = @{
         Filter      = "RecipientTypeDetails -ne 'MailUniversalSecurityGroup' -and IsDirSynced -eq 'False'"
+        ResultSize  = "Unlimited"
         Verbose     = $false
         ErrorAction = "Stop"
     }

@@ -175,31 +175,57 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Add account to group
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-distributiongroupmember?view=exchange-ps
-    $actionMessage = "granting group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+    try {
+        # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-distributiongroupmember?view=exchange-ps
+        $actionMessage = "granting group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
-    $grantPermissionSplatParams = @{
-        Identity                        = $actionContext.References.Permission.id
-        Member                          = $actionContext.References.Account
-        BypassSecurityGroupManagerCheck = $true
-        Confirm                         = $false
-        Verbose                         = $false
-        ErrorAction                     = "Stop"
+        $grantPermissionSplatParams = @{
+            Identity                        = $actionContext.References.Permission.id
+            Member                          = $actionContext.References.Account
+            BypassSecurityGroupManagerCheck = $true
+            Confirm                         = $false
+            Verbose                         = $false
+            ErrorAction                     = "Stop"
+        }
+
+        if (-Not($actionContext.DryRun -eq $true)) {
+            Write-Verbose "SplatParams: $($grantPermissionSplatParams | ConvertTo-Json)"
+
+            $grantPermissionResponse = Add-DistributionGroupMember @grantPermissionSplatParams
+
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    # Action  = "" # Optional
+                    Message = "Granted group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                    IsError = $false
+                })
+        }
+        else {
+            Write-Warning "DryRun: Would grant group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+        }
     }
+    catch {
+        $ex = $PSItem
+        if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
+            $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+            $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
+            $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
+            $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+        }
+        else {
+            $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
+            $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+        }
 
-    if (-Not($actionContext.DryRun -eq $true)) {
-        Write-Verbose "SplatParams: $($grantPermissionSplatParams | ConvertTo-Json)"
-
-        $grantPermissionResponse = Add-DistributionGroupMember @grantPermissionSplatParams
-
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Granted group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                IsError = $false
-            })
-    }
-    else {
-        Write-Warning "DryRun: Would grant group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+        if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    # Action  = "" # Optional
+                    Message = "Skipped $($actionMessage). Reason: User is already a member."
+                    IsError = $false
+                })
+        }
+        else {
+            throw $auditMessage
+        }
     }
     #endregion Add account to group
 }

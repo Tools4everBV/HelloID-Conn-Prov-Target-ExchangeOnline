@@ -17,7 +17,7 @@ $WarningPreference = "Continue"
 
 # PowerShell commands to import
 $commands = @(
-    "Add-MailboxPermission"    
+    "Add-MailboxPermission"  
     , "Remove-MailboxPermission"
     , "Add-RecipientPermission"
     , "Remove-RecipientPermission"
@@ -41,7 +41,7 @@ function Get-SanitizedGroupName {
     # This list of special characters includes: a leading space a trailing space and any of the following characters: # , + " \ < > 
     # A group account cannot consist solely of numbers, periods (.), or spaces. Any leading periods or spaces are cropped.
     # https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2003/cc776019(v=ws.10)?redirectedfrom=MSDN
-    # https://www.ietf.org/rfc/rfc2253.txt    
+    # https://www.ietf.org/rfc/rfc2253.txt  
     param(
         [parameter(Mandatory = $true)][String]$Name
     )
@@ -58,7 +58,7 @@ function Get-SanitizedGroupName {
 
     # Remove diacritics
     $newName = Remove-StringLatinCharacters $newName
-    
+  
     return $newName
 }
 
@@ -146,7 +146,7 @@ function Resolve-HTTPError {
 try {
     #region Verify account reference
     $actionMessage = "verifying account reference"
-    
+  
     if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
         throw "The account reference could not be found"
     }
@@ -154,7 +154,7 @@ try {
 
     #region Import module
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-    
+  
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
@@ -211,7 +211,7 @@ try {
     }
 
     $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
-    
+  
     Write-Verbose "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
@@ -225,9 +225,9 @@ try {
             Write-Verbose "Contract: $($contract.ExternalId). In condition: $($contract.Context.InConditions)"
             if ($contract.Context.InConditions -OR ($actionContext.DryRun -eq $true)) {
                 $actionMessage = "querying Exchange Online Sharedmailbox for department: $($contract.Department | ConvertTo-Json)"
-                
-                # Get group to use objectGuid to avoid name change issues
-                # Avaliable properties: https://learn.microsoft.com/en-us/powershell/exchange/cmdlet-property-sets?view=exchange-ps#get-exomailbox-property-sets
+        
+                # Get mailbox to use objectGuid to avoid name change issues
+                # Avaliable properties: https://learn.microsoft.com/en-us/powershell/exchange/filter-properties?view=exchange-ps
                 $correlationField = "CustomAttribute1"
                 $correlationValue = $contract.Department.ExternalId
 
@@ -239,13 +239,13 @@ try {
                     Verbose              = $false
                     ErrorAction          = "Stop"
                 }
-                
+        
                 Write-Verbose "Quering ExO Mailbox where [$correlationField -eq '$correlationValue']"
 
                 $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
                 $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
                 $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
-    
+  
                 if ($microsoftExchangeOnlineSharedMailboxes.Guid.count -eq 0) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
@@ -261,7 +261,7 @@ try {
                         })
                 }
                 else {
-                    $accessRights = @("FullAccess", "SendAs") # Options:  FullAccess, SendAs, SendOnBehalf
+                    $accessRights = @("FullAccess", "SendAs") # Options: FullAccess, SendAs, SendOnBehalf
                     foreach ($accessRight in $accessRights) {
                         # Add shared mailbox to desired permissions with the desired access right + the guid as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
                         $desiredPermissions["$accessRight-$($microsoftExchangeOnlineSharedMailboxes.Guid)"] = "$accessRight-$($microsoftExchangeOnlineSharedMailboxes.DisplayName)"
@@ -271,11 +271,9 @@ try {
         }
     }
     #endregion Define desired permissions
-    
-    if ($actionContext.DryRun -eq $true) {
-        Write-Warning ("Desired Permissions: {0}" -f ($desiredPermissions | ConvertTo-Json))
-        Write-Warning ("Existing Permissions: {0}" -f ($actionContext.CurrentPermissions | ConvertTo-Json))
-    }
+  
+    Write-Information ("Desired Permissions: {0}" -f ($desiredPermissions | ConvertTo-Json))
+    Write-Information ("Existing Permissions: {0}" -f ($actionContext.CurrentPermissions | ConvertTo-Json))
 
     #region Compare current with desired permissions and revoke permissions
     $newCurrentPermissions = @{}
@@ -286,11 +284,11 @@ try {
                 #region Revoke Full Access from account
                 try {
                     $mailboxId = $permission.Name -replace 'FullAccess-', ''
-                    $mailboxName = $permission.Name -replace 'FullAccess-', ''
+                    $mailboxName = $permission.Value -replace 'FullAccess-', ''
 
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-mailboxpermission?view=exchange-ps
                     $actionMessage = "revoking [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
-                    
+          
                     $revokeFullAccessPermissionSplatParams = @{
                         Identity        = $mailboxId
                         User            = $actionContext.References.Account
@@ -307,7 +305,7 @@ try {
                         $revokeFullAccessPermissionResponse = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Revoked [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                                 IsError = $false
                             })
@@ -328,17 +326,17 @@ try {
                         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
-                    
+          
                     if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
                     elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
@@ -352,7 +350,7 @@ try {
                 #region Revoke Send As from account
                 try {
                     $mailboxId = $permission.Name -replace 'SendAs-', ''
-                    $mailboxName = $permission.Name -replace 'SendAs-', ''
+                    $mailboxName = $permission.Value -replace 'SendAs-', ''
 
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-recipientpermission?view=exchange-ps
                     $actionMessage = "revoking [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -372,7 +370,7 @@ try {
                         $revokeSendAsPermissionresponse = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Revoked [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                                 IsError = $false
                             })
@@ -393,17 +391,17 @@ try {
                         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
-                
+        
                     if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
                     elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
@@ -418,7 +416,7 @@ try {
                 #region Revoke Send On Behalf from account
                 try {
                     $mailboxId = $permission.Name -replace 'SendOnBehalf-', ''
-                    $mailboxName = $permission.Name -replace 'SendOnBehalf-', ''
+                    $mailboxName = $permission.Value -replace 'SendOnBehalf-', ''
 
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
                     $actionMessage = "revoking [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -437,7 +435,7 @@ try {
                         $revokeSendOnBehalfPermissionResponse = Set-Mailbox @revokeSendOnBehalfPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Revoked [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                                 IsError = $false
                             })
@@ -458,17 +456,17 @@ try {
                         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
-                
+        
                     if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
+                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($mailboxId)*") {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
+                                # Action = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
@@ -486,7 +484,7 @@ try {
         }
     }
     #endregion Compare current with desired permissions and revoke permissions
-    
+  
     #region Compare desired with current permissions and grant permissions
     foreach ($permission in $desiredPermissions.GetEnumerator()) {
         $outputContext.SubPermissions.Add([PSCustomObject]@{
@@ -499,7 +497,7 @@ try {
             if ($permission.Name.StartsWith("FullAccess-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
                 #region Grant Full Access to account
                 $mailboxId = $permission.Name -replace 'FullAccess-', ''
-                $mailboxName = $permission.Name -replace 'FullAccess-', ''
+                $mailboxName = $permission.Value -replace 'FullAccess-', ''
 
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-mailboxpermission?view=exchange-ps
                 $actionMessage = "granting [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -521,7 +519,7 @@ try {
                     $grantFullAccessPermissionResponse = Add-MailboxPermission @grantFullAccessPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
+                            # Action = "" # Optional
                             Message = "Granted [FullAccess] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
@@ -534,7 +532,7 @@ try {
             elseif ($permission.Name.StartsWith("SendAs-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
                 #region Grant Send As to account
                 $mailboxId = $permission.Name -replace 'SendAs-', ''
-                $mailboxName = $permission.Name -replace 'SendAs-', ''
+                $mailboxName = $permission.Value -replace 'SendAs-', ''
 
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-recipientpermission?view=exchange-ps
                 $actionMessage = "granting [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -554,7 +552,7 @@ try {
                     $grantSendAsPermissionResponse = Add-RecipientPermission @grantSendAsPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
+                            # Action = "" # Optional
                             Message = "Granted [SendAs] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
@@ -567,7 +565,7 @@ try {
             elseif ($permission.Name.StartsWith("SendOnBehalf-", [System.StringComparison]::CurrentCultureIgnoreCase)) {
                 #region Grant Send On Behalf to account
                 $mailboxId = $permission.Name -replace 'SendOnBehalf-', ''
-                $mailboxName = $permission.Name -replace 'SendOnBehalf-', ''
+                $mailboxName = $permission.Value -replace 'SendOnBehalf-', ''
 
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
                 $actionMessage = "granting [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -586,7 +584,7 @@ try {
                     $grantSendOnBehalfPermissionResponse = Set-Mailbox @grantSendOnBehalfPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
+                            # Action = "" # Optional
                             Message = "Granted [SendOnBehalf] to mailbox [$($mailboxName)] with id [$($mailboxId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
@@ -617,7 +615,7 @@ catch {
     Write-Warning $warningMessage
 
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-            # Action  = "" # Optional
+            # Action = "" # Optional
             Message = $auditMessage
             IsError = $true
         })
@@ -633,11 +631,11 @@ finally {
     }
 
     $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
-    
+  
     Write-Verbose "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
-    # Handle case of empty defined dynamic permissions.  Without this the entitlement will error.
+    # Handle case of empty defined dynamic permissions. Without this the entitlement will error.
     if ($actionContext.Operation -match "update|grant" -AND $outputContext.SubPermissions.count -eq 0) {
         $outputContext.SubPermissions.Add([PSCustomObject]@{
                 DisplayName = "No permissions defined"

@@ -39,7 +39,7 @@ function Get-SanitizedGroupName {
     # This list of special characters includes: a leading space a trailing space and any of the following characters: # , + " \ < > 
     # A group account cannot consist solely of numbers, periods (.), or spaces. Any leading periods or spaces are cropped.
     # https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2003/cc776019(v=ws.10)?redirectedfrom=MSDN
-    # https://www.ietf.org/rfc/rfc2253.txt    
+    # https://www.ietf.org/rfc/rfc2253.txt  
     param(
         [parameter(Mandatory = $true)][String]$Name
     )
@@ -56,7 +56,7 @@ function Get-SanitizedGroupName {
 
     # Remove diacritics
     $newName = Remove-StringLatinCharacters $newName
-    
+  
     return $newName
 }
 
@@ -144,7 +144,7 @@ function Resolve-HTTPError {
 try {
     #region Verify account reference
     $actionMessage = "verifying account reference"
-    
+  
     if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
         throw "The account reference could not be found"
     }
@@ -152,7 +152,7 @@ try {
 
     #region Import module
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-    
+  
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
@@ -209,7 +209,7 @@ try {
     }
 
     $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
-    
+  
     Write-Verbose "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
@@ -220,38 +220,35 @@ try {
     if (-Not($actionContext.Operation -eq "revoke")) {
         # Example: Contract Based Logic:
         foreach ($contract in $personContext.Person.Contracts) {
-            $actionMessage = "querying Exchange Online Sharedmailbox for resource: $($resource | ConvertTo-Json)"
-
             Write-Verbose "Contract: $($contract.ExternalId). In condition: $($contract.Context.InConditions)"
             if ($contract.Context.InConditions -OR ($actionContext.DryRun -eq $true)) {
-                # Get group to use objectGuid to avoid name change issues
-                # Avaliable properties: https://learn.microsoft.com/en-us/powershell/exchange/cmdlet-property-sets?view=exchange-ps#get-exomailbox-property-sets
-                $correlationField = "DisplayName" # Examples "Name" "CustomAttribute1"
-                $correlationValue = $contract.Department.DisplayName
-            
-                # Sanitize group name, e.g. replace " - " with "_" or other sanitization actions 
-                $correlationValue = Get-SanitizedGroupName -Name $correlationValue
+                $actionMessage = "querying Exchange Online Group for department: $($contract.Department | ConvertTo-Json)"
 
-                $getExOGroupsSplatParams = @{
-                    Filter      = "IsDirSynced -eq 'False' -and $correlationField -eq '$correlationValue'"
+                # Get group to use objectGuid to avoid name change issues
+                # Avaliable properties: https://learn.microsoft.com/en-us/powershell/exchange/filter-properties?view=exchange-ps
+                $correlationField = "CustomAttribute1"
+                $correlationValue = $contract.Department.ExternalId
+
+
+                $getMicrosoftExchangeOnlineGroupsSplatParams = @{
+                    Filter      = "$correlationField -eq '$correlationValue' -and IsDirSynced -eq 'False'"
                     ResultSize  = "Unlimited"
                     Verbose     = $false
                     ErrorAction = "Stop"
                 }
-            
-                Write-Verbose "Quering ExO Group where [$correlationField -eq '$correlationValue']"
 
-                $groups = $null
-                $groups = Get-DistributionGroup @getExOGroupsSplatParams
+                $getMicrosoftExchangeOnlineGroupsResponse = $null
+                $getMicrosoftExchangeOnlineGroupsResponse = Get-DistributionGroup @getMicrosoftExchangeOnlineGroupsSplatParams
+                $microsoftExchangeOnlineGroups = $getMicrosoftExchangeOnlineGroupsResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
 
-                if ($groups.Guid.count -eq 0) {
+                if ($microsoftExchangeOnlineGroups.Guid.count -eq 0) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
                             Message = "No Group found where [$($correlationField)] = [$($correlationValue)]"
                             IsError = $true
                         })
                 }
-                elseif ($groups.Guid.count -gt 1) {
+                elseif ($microsoftExchangeOnlineGroups.Guid.count -gt 1) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
                             Message = "Multiple Groups found where [$($correlationField)] = [$($correlationValue)]. Please correct this so the Groups are unique."
@@ -259,74 +256,28 @@ try {
                         })
                 }
                 else {
-                    # Add group to desired permissions with the id as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
-                    $desiredPermissions["$($groups.Guid)"] = @{
-                        Id   = $groups.Guid
-                        Name = $groups.DisplayName
-                    }
+                    # Add group to desired permissions with the guid as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
+                    $desiredPermissions["$($microsoftExchangeOnlineGroups.Guid)"] = "$($microsoftExchangeOnlineGroups.DisplayName)"
                 }
             }
         }
     }
     #endregion Define desired permissions
-    
-    Write-Warning ("Desired Permissions: {0}" -f ($desiredPermissions.Values | ConvertTo-Json))
-    Write-Warning ("Existing Permissions: {0}" -f ($actionContext.CurrentPermissions.DisplayName | ConvertTo-Json))
+  
+    Write-Information ("Desired Permissions: {0}" -f ($desiredPermissions | ConvertTo-Json))
+    Write-Information ("Existing Permissions: {0}" -f ($actionContext.CurrentPermissions | ConvertTo-Json))
 
     #region Compare current with desired permissions and revoke permissions
     $newCurrentPermissions = @{}
-    foreach ($permission in $currentPermissions.GetEnumerator()) {    
+    foreach ($permission in $currentPermissions.GetEnumerator()) {
         if (-Not $desiredPermissions.ContainsKey($permission.Name) -AND $permission.Name -ne "No permissions defined") {
-            #region Add account to group
-            # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-distributiongroupmember?view=exchange-ps
-            $actionMessage = "granting group [$($permission.Value.Name)] with id [$($permission.Value.Id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
-
-            $grantPermissionSplatParams = @{
-                Identity                        = $permission.Value.Id
-                Member                          = $actionContext.References.Account
-                BypassSecurityGroupManagerCheck = $true
-                Confirm                         = $false
-                Verbose                         = $false
-                ErrorAction                     = "Stop"
-            }
-
-            if (-Not($actionContext.DryRun -eq $true)) {
-                Write-Verbose "SplatParams: $($grantPermissionSplatParams | ConvertTo-Json)"
-
-                $grantPermissionResponse = Add-DistributionGroupMember @grantPermissionSplatParams
-
-                $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        # Action  = "" # Optional
-                        Message = "Granted group [$($permission.Value.Name)] with id [$($permission.Value.Id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                        IsError = $false
-                    })
-            }
-            else {
-                Write-Warning "DryRun: Would grant group [$($permission.Value.Name)] with id [$($permission.Value.Id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-            }
-            #endregion Add account to group
-        }
-        else {
-            $newCurrentPermissions[$permission.Name] = $permission.Value
-        }
-    }
-    #endregion Compare current with desired permissions and revoke permissions
-
-    #region Compare desired with current permissions and grant permissions
-    foreach ($permission in $desiredPermissions.GetEnumerator()) {
-        $outputContext.SubPermissions.Add([PSCustomObject]@{
-                DisplayName = $permission.Value
-                Reference   = [PSCustomObject]@{ Id = $permission.Name }
-            })
-    
-        if (-Not $currentPermissions.ContainsKey($permission.Name)) {
             #region Remove account from group
             try {
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-distributiongroupmember?view=exchange-ps
-                $actionMessage = "revoking group [$($permission.Value.Name)] with id [$($permission.Value.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+                $actionMessage = "revoking group [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
                 $revokePermissionSplatParams = @{
-                    Identity                        = $permission.Value.Id
+                    Identity                        = $permission.Name
                     Member                          = $actionContext.References.Account
                     BypassSecurityGroupManagerCheck = $true
                     Confirm                         = $false
@@ -340,13 +291,13 @@ try {
                     $revokePermissionResponse = Remove-DistributionGroupMember @revokePermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
-                            Message = "Revoked group [$($permission.Value.Name)] with id [$($permission.Value.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                            # Action = "" # Optional
+                            Message = "Revoked group [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
                 else {
-                    Write-Warning "DryRun: Would revoke group [$($permission.Value.Name)] with id [$($permission.Value.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                    Write-Warning "DryRun: Would revoke group [$($permission.Value)] with id [$($permission.Name)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                 }
             }
             catch {
@@ -364,21 +315,21 @@ try {
 
                 if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
+                            # Action = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
                             IsError = $false
                         })
                 }
-                elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Value.Id)*") {
+                elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
+                            # Action = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: Group no longer exists."
                             IsError = $false
                         })
                 }
                 elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
+                            # Action = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: User no longer exists."
                             IsError = $false
                         })
@@ -388,7 +339,76 @@ try {
                 }
             }
             #endregion Remove account from group
-        }    
+        }
+        else {
+            $newCurrentPermissions[$permission.Name] = $permission.Value
+        }
+    }
+    #endregion Compare current with desired permissions and revoke permissions
+
+    #region Compare desired with current permissions and grant permissions
+    foreach ($permission in $desiredPermissions.GetEnumerator()) {
+        $outputContext.SubPermissions.Add([PSCustomObject]@{
+                DisplayName = $permission.Value
+                Reference   = [PSCustomObject]@{ Id = $permission.Name }
+            })
+  
+        if (-Not $currentPermissions.ContainsKey($permission.Name)) {
+            #region Add account to group
+            try {
+                # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-distributiongroupmember?view=exchange-ps
+                $actionMessage = "granting group [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+
+                $grantPermissionSplatParams = @{
+                    Identity                        = $permission.Name
+                    Member                          = $actionContext.References.Account
+                    BypassSecurityGroupManagerCheck = $true
+                    Confirm                         = $false
+                    Verbose                         = $false
+                    ErrorAction                     = "Stop"
+                }
+
+                if (-Not($actionContext.DryRun -eq $true)) {
+                    Write-Verbose "SplatParams: $($grantPermissionSplatParams | ConvertTo-Json)"
+
+                    $grantPermissionResponse = Add-DistributionGroupMember @grantPermissionSplatParams
+
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Granted group [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                            IsError = $false
+                        })
+                }
+                else {
+                    Write-Warning "DryRun: Would grant group [$($permission.Value)] with id [$($permission.Name)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                }
+            }
+            catch {
+                $ex = $PSItem
+                if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
+                    $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+                    $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
+                    $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
+                    $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+                }
+                else {
+                    $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
+                    $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+                }
+
+                if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    $outputContext.AuditLogs.Add([PSCustomObject]@{
+                            # Action  = "" # Optional
+                            Message = "Skipped $($actionMessage). Reason: User is already a member."
+                            IsError = $false
+                        })
+                }
+                else {
+                    throw $auditMessage
+                }
+            }
+            #endregion Add account to group
+        }
     }
     #endregion Compare desired with current permissions and grant permissions
 }
@@ -408,7 +428,7 @@ catch {
     Write-Warning $warningMessage
 
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-            # Action  = "" # Optional
+            # Action = "" # Optional
             Message = $auditMessage
             IsError = $true
         })
@@ -424,11 +444,11 @@ finally {
     }
 
     $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
-    
+  
     Write-Verbose "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
-    # Handle case of empty defined dynamic permissions.  Without this the entitlement will error.
+    # Handle case of empty defined dynamic permissions. Without this the entitlement will error.
     if ($actionContext.Operation -match "update|grant" -AND $outputContext.SubPermissions.count -eq 0) {
         $outputContext.SubPermissions.Add([PSCustomObject]@{
                 DisplayName = "No permissions defined"
