@@ -26,8 +26,8 @@
           "MapForActions": [
             "Create"
           ],
-          "MappingMode": "Complex",
-          "Value": "\"function getUserPrincipalName() {\\r\\n    let userPrincipalName = Person.Accounts.MicrosoftActiveDirectory.userPrincipalName;\\r\\n\\r\\n    return userPrincipalName;\\r\\n}\\r\\n\\r\\ngetUserPrincipalName()\"",
+          "MappingMode": "None",
+          "Value": "null",
           "UsedInNotifications": false,
           "StoreInAccountData": true
         }
