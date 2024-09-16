@@ -1,8 +1,9 @@
-#################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-folderPermission-Grant
-# Set permission for user on folder of mailbox
+#####################################################
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-MailboxRegionalConfiguration-Grant
+# Set Mailbox Regional Configuration on mailbox
 # PowerShell V2
-#################################################
+#####################################################
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -16,8 +17,7 @@ $WarningPreference = "Continue"
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-MailboxFolderStatistics"
-    , "Set-MailboxFolderPermission"
+    "Set-MailboxRegionalConfiguration"
 )
 
 #region functions
@@ -113,7 +113,7 @@ try {
 
     #region Import module
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-
+    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
@@ -170,54 +170,40 @@ try {
     }
 
     $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
-
+    
     Write-Verbose "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
-    #region Get Mailbox "Calendar" folder name
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
-    $actionMessage = "querying Mailbox [Calendar] folder name for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+    #region Set Mailbox Regional Configuration
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
+    $actionMessage = "setting Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]"
 
-    $getMicrosoftExchangeOnlineMailboxFolderStatisticsSplatParams = @{
-        Identity    = $actionContext.References.Account
-        FolderScope = "Calendar"
-        Verbose     = $false
-        ErrorAction = "Stop"
+    $setMailboxRegionalConfigurationSplatParams = @{
+        Identity                  = $actionContext.References.Account
+        Language                  = $actionContext.References.Permission.Language
+        DateFormat                = $actionContext.References.Permission.DateFormat
+        TimeFormat                = $actionContext.References.Permission.TimeFormat
+        TimeZone                  = $actionContext.References.Permission.TimeZone
+        LocalizeDefaultFolderName = $actionContext.References.Permission.LocalizeDefaultFolderName
+        Verbose                   = $false
+        ErrorAction               = "Stop"
     }
 
-    $getMicrosoftExchangeOnlineMailboxFolderStatisticsResponse = Get-MailboxFolderStatistics @getMicrosoftExchangeOnlineMailboxFolderStatisticsSplatParams
-    $mailboxFolderName = ($getMicrosoftExchangeOnlineMailboxFolderStatisticsResponse | Where-Object { $_.FolderType -eq 'Calendar' }).Name
-        
-    Write-Verbose "Queried Mailbox [Calendar] folder name for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json). Result: $($mailboxFolderName | ConvertTo-Json)"
-    #endregion Get Mailbox "Calendar" folder name
-
-    #region Set Mailbox Folder Permission
-    # Docs: https://docs.microsoft.com/en-us/powershell/module/exchange/set-mailboxfolderpermission?view=exchange-ps
-    $actionMessage = "setting permission for [$($actionContext.References.Permission.mailboxFolderUser)] to [$($actionContext.References.Permission.mailboxFolderAccessRight)] on the [$($mailboxFolderName)] folder of mailbox [$($actionContext.References.Account)]"
-
-    $setMailboxFolderPermissionSplatParams = @{
-        Identity     = "$($actionContext.References.Account):\$($mailboxFolderName)"
-        User         = $actionContext.References.Permission.mailboxFolderUser
-        AccessRights = $actionContext.References.Permission.mailboxFolderAccessRight
-        Verbose      = $false
-        ErrorAction  = "Stop"
-    }
-
-    Write-Verbose "SplatParams: $($setMailboxFolderPermissionSplatParams | ConvertTo-Json)"
+    Write-Verbose "SplatParams: $($enableLitigationHoldSplatParams | ConvertTo-Json)"
 
     if (-Not($actionContext.DryRun -eq $true)) {
-        $setMailboxFolderPermissionResponse = Set-MailboxFolderPermission @setMailboxFolderPermissionSplatParams
+        $setMailboxRegionalConfigurationResponse = Set-Mailbox @setMailboxRegionalConfigurationSplatParams
 
         $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
-                Message = "Set permission for [$($actionContext.References.Permission.mailboxFolderUser)] to [$($actionContext.References.Permission.mailboxFolderAccessRight)] on the [$($mailboxFolderName)] folder of mailbox [$($actionContext.References.Account)]."
+                Message = "Set Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]."
                 IsError = $false
             })
     }
     else {
-        Write-Warning "DryRun: Would set permission for [$($actionContext.References.Permission.mailboxFolderUser)] to [$($actionContext.References.Permission.mailboxFolderAccessRight)] on the [$($mailboxFolderName)] folder of mailbox [$($actionContext.References.Account)]."
+        Write-Warning "DryRun: Would set Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]."
     }
-    #endregion Set Mailbox Folder Permission
+    #endregion Set Mailbox Regional Configuration
 }
 catch {
     $ex = $PSItem
@@ -231,6 +217,7 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
+
     Write-Warning $warningMessage
 
     $outputContext.AuditLogs.Add([PSCustomObject]@{

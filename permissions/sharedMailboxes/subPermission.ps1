@@ -623,7 +623,7 @@ catch {
 finally {
     #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to Microsoft Exchange Online"
+    $actionMessage = "disconnecting to Microsoft Exchange Online"
 
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
