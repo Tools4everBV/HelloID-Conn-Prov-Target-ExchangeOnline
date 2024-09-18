@@ -102,7 +102,7 @@ try {
     #region account
     # Define correlation
     $correlationField = $actionContext.CorrelationConfiguration.accountField
-    $correlationValue = $actionContext.CorrelationConfiguration.accountFieldValue
+    $correlationValue = $actionContext.CorrelationConfiguration.personFieldValue
 
     # Define account object
     $account = [PSCustomObject]$actionContext.Data.PsObject.Copy()
