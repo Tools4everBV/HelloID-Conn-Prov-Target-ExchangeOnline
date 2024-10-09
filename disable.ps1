@@ -223,19 +223,19 @@ try {
             if (-Not($actionContext.DryRun -eq $true)) {       
                 $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
 
-                Write-Information "Account with id [$($actionContext.References.Account)] successfully disabled [HideFromAddressListsEnabled = true]"
+                Write-Information "Account with id [$($actionContext.References.Account)] successfully disabled [HiddenFromAddressListsEnabled = true]"
 
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($actionContext.References.Account)] successfully disabled [HideFromAddressListsEnabled = true]"
+                        Message = "Account with id [$($actionContext.References.Account)] successfully disabled [HiddenFromAddressListsEnabled = true]"
                         IsError = $false
                     })
             }
             else {
-                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HideFromAddressListsEnabled = true]."
+                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HiddenFromAddressListsEnabled = true]."
             }
 
-            $outputContext.Data.HideFromAddressListsEnabled = $true
-            $outputContext.PreviousData.HideFromAddressListsEnabled = $false
+            $outputContext.Data.HiddenFromAddressListsEnabled = $true
+            $outputContext.PreviousData.HiddenFromAddressListsEnabled = $false
 
             break
         }
