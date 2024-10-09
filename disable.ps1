@@ -177,7 +177,7 @@ try {
 
     #region Get account
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
-    $actionMessage = "querying account where [$($correlationField)] = [$($correlationValue)]"
+    $actionMessage = "querying account where [Identity] = [$($actionContext.References.Account)]"
 
     $getMicrosoftExchangeOnlineAccountSplatParams = @{
         Identity    = $actionContext.References.Account
