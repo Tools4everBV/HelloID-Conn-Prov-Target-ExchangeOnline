@@ -1,42 +1,32 @@
-| :warning: Warning |
-| :---------------- |
-| This readme is not updated. This will be done in combination with the import/export file for powershell V2 |
 
-| :warning: Warning |
-| :---------------- |
-| Not all scripts are converted to powershell V2. Please check the comments in the first 5 rows of the code |
+# HelloID-Conn-Prov-Target-ExchangeOnline
 
-| :warning: Warning |
-| :---------------- |
-| This script is for the new powershell connector. Make sure to use the mapping and correlation keys like mentionded in this readme. For more information, please read our [documentation](https://docs.helloid.com/en/provisioning/target-systems/powershell-v2-target-systems.html) |
+> [!WARNING]
+> The readme of this connector has not been converted to the new template. The scripts are ready for a Pull Request
 
-| :warning: Warning |
-|:---------------------------|
-| This connector is written and tested for the EXO module v3.1. Please make sure you have installed, at least, this version. |
-
-| :information_source: Information |
-|:---------------------------|
-| This repository contains the connector and configuration code only. The implementer is responsible to acquire the connection details such as username, password, certificate, etc. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements.       |
+> [!IMPORTANT]
+> This repository contains the connector and configuration code only. The implementer is responsible to acquire the connection details such as username, password, certificate, etc. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements.
 
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/69046642/160915847-b8a72368-931c-45d1-8f93-9cc7bb974ca8.png" percentage="50">
+    <img src="https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/blob/main/Logo.png?raw=true">
 </p>
 
 <!-- TABLE OF CONTENTS -->
 ## Table of Contents
-- [Table of Contents](#table-of-contents)
-- [Requirements](#requirements)
-- [Introduction](#introduction)
-- [Installing the Microsoft Exchange Online PowerShell V3.1 module](#installing-the-microsoft-exchange-online-powershell-v31-module)
-- [Creating the Azure AD App Registration and certificate](#creating-the-azure-ad-app-registration-and-certificate)
-  - [Application Registration](#application-registration)
-  - [Configuring App Permissions](#configuring-app-permissions)
-  - [Assign Azure AD roles to the application](#assign-azure-ad-roles-to-the-application)
-  - [Authentication and Authorization](#authentication-and-authorization)
-  - [Connection settings](#connection-settings)
-  - [Remarks](#remarks)
-- [Getting help](#getting-help)
-- [HelloID Docs](#helloid-docs)
+- [HelloID-Conn-Prov-Target-ExchangeOnline](#helloid-conn-prov-target-exchangeonline)
+  - [Table of Contents](#table-of-contents)
+  - [Requirements](#requirements)
+  - [Introduction](#introduction)
+  - [Installing the Microsoft Exchange Online PowerShell V3.1 module](#installing-the-microsoft-exchange-online-powershell-v31-module)
+  - [Creating the Azure AD App Registration and certificate](#creating-the-azure-ad-app-registration-and-certificate)
+    - [Application Registration](#application-registration)
+    - [Configuring App Permissions](#configuring-app-permissions)
+    - [Assign Azure AD roles to the application](#assign-azure-ad-roles-to-the-application)
+    - [Authentication and Authorization](#authentication-and-authorization)
+    - [Connection settings](#connection-settings)
+    - [Remarks](#remarks)
+  - [Getting help](#getting-help)
+  - [HelloID Docs](#helloid-docs)
 
 ## Requirements
 - Installed and available **Microsoft Exchange Online PowerShell V3.1 module**. Please see the [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps) for more information. The download [can be found here](https://www.powershellgallery.com/packages/ExchangeOnlineManagement/3.0.0).
@@ -112,12 +102,12 @@ There are multiple ways to authenticate to the Graph API with each has its own p
 ### Connection settings
 The following settings are required to connect.
 
-| Setting     | Description |
-| ------------ | ----------- |
+| Setting               | Description                                                                                                                                                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Azure AD Organization | The name of the organization to connect to and where the Azure AD App Registration exists. **Please note: You must use the primary .onmicrosoft.com domain of the organization. Using anything else may lead to inconsistent results.** |
-| Azure AD Tenant ID | Id of the Azure tenant |
-| Azure AD App Id | The Application (client) ID of the Azure AD App Registration with Exchange Permissions |
-| Azure AD App Secret | Secret of the Azure AD App Registration with Exchange Permissions |
+| Azure AD Tenant ID    | Id of the Azure tenant                                                                                                                                                                                                                  |
+| Azure AD App Id       | The Application (client) ID of the Azure AD App Registration with Exchange Permissions                                                                                                                                                  |
+| Azure AD App Secret   | Secret of the Azure AD App Registration with Exchange Permissions                                                                                                                                                                       |
 
 ### Remarks
 
