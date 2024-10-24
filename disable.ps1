@@ -16,7 +16,6 @@ $WarningPreference = "Continue"
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-User",
     "Get-Mailbox",
     "Set-Mailbox"
 )
@@ -75,32 +74,6 @@ function Resolve-ExchangeOnlineError {
     }
 }
 
-function Convert-StringToBoolean($obj) {
-    if ($obj -is [PSCustomObject]) {
-        foreach ($property in $obj.PSObject.Properties) {
-            $value = $property.Value
-            if ($value -is [string]) {
-                $lowercaseValue = $value.ToLower()
-                if ($lowercaseValue -eq "true") {
-                    $obj.$($property.Name) = $true
-                }
-                elseif ($lowercaseValue -eq "false") {
-                    $obj.$($property.Name) = $false
-                }
-            }
-            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
-                $obj.$($property.Name) = Convert-StringToBoolean $value
-            }
-            elseif ($value -is [System.Collections.IList]) {
-                for ($i = 0; $i -lt $value.Count; $i++) {
-                    $value[$i] = Convert-StringToBoolean $value[$i]
-                }
-                $obj.$($property.Name) = $value
-            }
-        }
-    }
-    return $obj
-}
 #endregion functions
 
 try {
@@ -234,14 +207,11 @@ try {
                 Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HiddenFromAddressListsEnabled = true]."
             }
 
-            $outputContext.Data.HiddenFromAddressListsEnabled = $true
-            $outputContext.PreviousData.HiddenFromAddressListsEnabled = $false
-
             break
         }
 
         "NoChanges" {
-            $actionMessage = "no changes to account"
+            $actionMessage = "skipping updating account"
 
             $outputContext.Data = $actionContext.Data
             $outputContext.PreviousData = $actionContext.Data
@@ -257,12 +227,14 @@ try {
         }
 
         "NotFound" {
-            #region No account found
-            $actionMessage = "correlating to account"
-        
-            # Throw terminal error
-            throw "No account found where [Identity] = [$($actionContext.References.Account)]."
-            #endregion No account found
+            $actionMessage = "skipping disabling account with AccountReference [$($actionContext.References.Account)]"
+    
+            Write-Information "Account with AccountReference [$($actionContext.References.Account)] successfully disabled (skipped not found)"
+                
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Message = "Account with AccountReference [$($actionContext.References.Account)] successfully deleted (skipped not found)"
+                    IsError = $false
+                })
 
             break
         }

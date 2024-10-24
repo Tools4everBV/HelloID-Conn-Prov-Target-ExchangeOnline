@@ -2,8 +2,24 @@
   "Version": "v1",
   "MappingFields": [
     {
+      "Name": "AutoReplyState",
+      "Description": "[Required] if using the delete script for enabling AutoReplyState",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Delete"
+          ],
+          "MappingMode": "Fixed",
+          "Value": "\"Enabled\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
       "Name": "guid",
-      "Description": "[Required] The unique identifier for the user. Read-only.\nUsed as AccountReference.",
+      "Description": "[Required] Account Refference is written back to account data",
       "Type": "Text",
       "MappingActions": [
         {
@@ -11,37 +27,52 @@
             "Create"
           ],
           "MappingMode": "None",
-          "Value": "null",
+          "Value": "\"\"",
           "UsedInNotifications": false,
           "StoreInAccountData": true
+        }
+      ]
+    },
+    {
+      "Name": "InternalMessage",
+      "Description": "[Required] if using the delete script for enabling AutoReplyState",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Delete"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"function getValue() {\\n    let manager = Person.PrimaryManager.DisplayName;\\n    let managerName = 'PutHereYourFallBackManagerName';\\n\\n    if (typeof manager !== 'undefined' && manager) {\\n         managerName = manager.split(' (')[0];\\n    }\\n\\n    let output = 'Dear colleague, thank you for your message. ';\\n    output = output + 'I am no longer employed at YourCompany. ';\\n    output = output + 'Your mail will be forwarded to ' + managerName;\\n    return output;\\n}\\n\\ngetValue();\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "ExternalMessage",
+      "Description": "[Required] if using the delete script for enabling AutoReplyState",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Delete"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"function getValue() {\\n    let manager = Person.PrimaryManager.DisplayName;\\n    let managerMailToCheck = Person.PrimaryManager.Email;\\n    let managerName = 'PutHereYourFallBackManagerName';\\n    let managerMail = 'PutHereYourFallBackManagerMail@mail.com';\\n\\n    if (typeof manager !== 'undefined' && manager) {\\n         managerName = manager.split(' (')[0];\\n    }\\n    if (typeof managerMailToCheck !== 'undefined' && managerMailToCheck) {\\n        managerMail = managerMailToCheck;\\n    }\\n\\n    let output = 'Dear Sir, Madam, Thank you for your email. ';\\n    output = output + 'I am no longer employed at YourCompany. ';\\n    output = output + 'Your mail is automatically forwarded to my colleague ' + managerName;\\n    output = output + 'with mail address ' + managerMail;\\n\\n    return output;\\n}\\n\\ngetValue();\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
         }
       ]
     },
     {
       "Name": "userPrincipalName",
-      "Description": "[Required] The user principal name (UPN) of the user. The UPN is an Internet-style sign-in name for the user based on the Internet standard RFC 822. By convention, this should map to the user's email name. The general format is alias@domain, where the domain must be present in the tenant's collection of verified domains.\nNOTE: This property can't contain accent characters. Only the following characters are allowed A - Z, a - z, 0 - 9, ' . - _ ! # ^ ~.",
+      "Description": "[Required] for correlation",
       "Type": "Text",
       "MappingActions": [
         {
           "MapForActions": [
             "Create"
-          ],
-          "MappingMode": "None",
-          "Value": "null",
-          "UsedInNotifications": false,
-          "StoreInAccountData": true
-        }
-      ]
-    },
-    {
-      "Name": "HiddenFromAddressListsEnabled",
-      "Description": "[Required] if using the enable / disable script for showing/hiding the addressList",
-      "Type": "Text",
-      "MappingActions": [
-        {
-          "MapForActions": [
-            "Enable",
-            "Disable"
           ],
           "MappingMode": "None",
           "Value": "\"\"",

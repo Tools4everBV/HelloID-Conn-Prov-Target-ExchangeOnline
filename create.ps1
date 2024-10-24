@@ -17,7 +17,8 @@ $WarningPreference = "Continue"
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-User"
+    "Get-User",
+    "Get-EXOMailbox"
 )
 
 #region functions
@@ -180,7 +181,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
+    Write-Verbose "Created access token."
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -216,7 +217,7 @@ try {
     }
 
     $getMicrosoftExchangeOnlineAccountResponse = $null
-    $getMicrosoftExchangeOnlineAccountResponse = Get-User @getMicrosoftExchangeOnlineAccountSplatParams
+    $getMicrosoftExchangeOnlineAccountResponse = Get-EXOMailbox @getMicrosoftExchangeOnlineAccountSplatParams
     $correlatedAccount = $getMicrosoftExchangeOnlineAccountResponse | Select-Object $accountPropertiesToQuery
         
     Write-Verbose "Queried account where [$($correlationField)] = [$($correlationValue)]. Result: $($correlatedAccount  | ConvertTo-Json)"

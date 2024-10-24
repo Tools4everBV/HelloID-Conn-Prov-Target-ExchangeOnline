@@ -1,5 +1,5 @@
 #################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Enable
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Delete
 # PowerShell V2
 #################################################
 
@@ -14,10 +14,10 @@ switch ($actionContext.Configuration.isDebug) {
 $InformationPreference = "Continue"
 $WarningPreference = "Continue"
 
-# Define PowerShell commands to import
+# PowerShell commands to import
 $commands = @(
-    "Get-Mailbox",
-    "Set-Mailbox"
+    "Get-EXOMailbox"
+    , "Set-MailboxAutoReplyConfiguration"
 )
 
 #region functions
@@ -74,32 +74,6 @@ function Resolve-ExchangeOnlineError {
     }
 }
 
-function Convert-StringToBoolean($obj) {
-    if ($obj -is [PSCustomObject]) {
-        foreach ($property in $obj.PSObject.Properties) {
-            $value = $property.Value
-            if ($value -is [string]) {
-                $lowercaseValue = $value.ToLower()
-                if ($lowercaseValue -eq "true") {
-                    $obj.$($property.Name) = $true
-                }
-                elseif ($lowercaseValue -eq "false") {
-                    $obj.$($property.Name) = $false
-                }
-            }
-            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
-                $obj.$($property.Name) = Convert-StringToBoolean $value
-            }
-            elseif ($value -is [System.Collections.IList]) {
-                for ($i = 0; $i -lt $value.Count; $i++) {
-                    $value[$i] = Convert-StringToBoolean $value[$i]
-                }
-                $obj.$($property.Name) = $value
-            }
-        }
-    }
-    return $obj
-}
 #endregion functions
 
 try {
@@ -110,32 +84,32 @@ try {
         throw "The account reference could not be found"
     }
     #endregion Verify account reference
-
+ 
     #region Import module
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-    
+     
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
         Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
-
+ 
     $importModuleResponse = Import-Module @importModuleSplatParams
-
+ 
     Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
-
+ 
     #region Create access token
     $actionMessage = "creating access token"
-    
+     
     $createAccessTokenBody = @{
         grant_type    = "client_credentials"
         client_id     = $actionContext.Configuration.AppId
         client_secret = $actionContext.Configuration.AppSecret
         resource      = "https://outlook.office365.com"
     }
-
+ 
     $createAccessTokenSplatParams = @{
         Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
         Headers         = $headers
@@ -146,16 +120,16 @@ try {
         Verbose         = $false
         ErrorAction     = "Stop"
     }
-
+ 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
-
+ 
     Write-Verbose "Created access token."
     #endregion Create access token
-
+ 
     #region Connect to Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "connecting to Microsoft Exchange Online"
-
+ 
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
@@ -168,9 +142,9 @@ try {
         SkipLoadingFormatData = $true
         ErrorAction           = "Stop"
     }
-
+ 
     $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        
+         
     Write-Verbose "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
@@ -184,7 +158,7 @@ try {
         ErrorAction = "Stop"
     }
 
-    $correlatedAccount = Get-Mailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName, HiddenFromAddressListsEnabled
+    $correlatedAccount = Get-EXOMailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName
         
     Write-Verbose "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
@@ -193,72 +167,53 @@ try {
     $actionMessage = "calculating action"
 
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        if ($correlatedAccount.HiddenFromAddressListsEnabled -eq $true) {
-            $actionAccount = "Enable"
-        }
-        else {
-            $actionAccount = "NoChanges"
-        }
+        $actionAccount = "Delete"
     }
     else {
         $actionAccount = "NotFound"
     }
     #endregion Calulate action
-    
+
     #region Process
     switch ($actionAccount) {
-        "Enable" {
-            $actionMessage = "enabeling account"
+        "Delete" {
+            $actionMessage = "setting autoreply to account"
 
             $setMicrosoftExchangeOnlineAccountSplatParams = @{
-                Identity                      = $actionContext.References.Account
-                HiddenFromAddressListsEnabled = $false
-                Verbose                       = $false
-                ErrorAction                   = "Stop"
+                Identity        = $actionContext.References.Account
+                AutoReplyState  = $actionContext.Data.AutoReplyState
+                InternalMessage = $actionContext.Data.InternalMessage
+                ExternalMessage = $actionContext.Data.ExternalMessage
+                Verbose         = $false
+                ErrorAction     = "Stop"
             }
-        
+    
             Write-Verbose "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
 
             if (-Not($actionContext.DryRun -eq $true)) {       
-                $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
+                $null = Set-MailboxAutoReplyConfiguration  @setMicrosoftExchangeOnlineAccountSplatParams
 
-                Write-Information "Account with id [$($actionContext.References.Account)] successfully enabled [HideFromAddressListsEnabled = false]"
+                Write-Information "Account with id [$($actionContext.References.Account)] successfully deleted [AutoReplyState = $($actionContext.Data.AutoReplyState)]"
 
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($actionContext.References.Account)] successfully enabled [HideFromAddressListsEnabled = false]"
+                        Message = "Account with id [$($actionContext.References.Account)] successfully deleted [AutoReplyState = $($actionContext.Data.AutoReplyState)]"
                         IsError = $false
                     })
             }
             else {
-                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HideFromAddressListsEnabled = false]."
+                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [AutoReplyState = $($actionContext.Data.AutoReplyState)]"
             }
-
-            break
-        }
-
-        "NoChanges" {
-            $actionMessage = "no changes to account"
-
-            $outputContext.Data = $actionContext.Data
-            $outputContext.PreviousData = $actionContext.Data
-
-            Write-Information "Account with id [$($actionContext.References.Account)] successfully checked. No changes required"
-
-            $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    Message = "Account with id [$($actionContext.References.Account)] successfully checked. No changes required"
-                    IsError = $false
-                })
 
             break
         }
 
         "NotFound" {
-            $actionMessage = "updating account"
-        
-            Write-Information "No account found where [Identity] = [$($actionContext.References.Account)]. Possibly indicating that it could be deleted, or not correlated."
+            $actionMessage = "skipping deleting account with AccountReference [$($actionContext.References.Account)]"
+    
+            Write-Information "Account with AccountReference [$($actionContext.References.Account)] successfully deleted (skipped not found)"
                 
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    Message = "No account found where [Identity] = [$($actionContext.References.Account)]. Possibly indicating that it could be deleted, or not correlated."
+                    Message = "Account with AccountReference [$($actionContext.References.Account)] successfully deleted (skipped not found)"
                     IsError = $false
                 })
 
@@ -279,9 +234,9 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-
+    
     Write-Warning $warningMessage
-
+    
     $outputContext.AuditLogs.Add([PSCustomObject]@{
             Message = $auditMessage
             IsError = $true
