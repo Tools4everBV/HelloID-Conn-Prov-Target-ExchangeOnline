@@ -184,7 +184,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
+    Write-Verbose "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online

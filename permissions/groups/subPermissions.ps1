@@ -1,6 +1,6 @@
 #####################################################
 # HelloID-Conn-Prov-Target-ExchangeOnline-subPermissions-Groups
-# Grant and Revoke groupmemberships
+# Grant and Revoke groupmemberships from account
 # PowerShell V2
 #################################################
 
@@ -188,7 +188,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
+    Write-Verbose "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online

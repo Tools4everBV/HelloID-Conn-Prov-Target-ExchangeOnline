@@ -183,7 +183,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token. Result: $($createAccessTokenResonse | ConvertTo-Json)"
+    Write-Verbose "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -265,7 +265,7 @@ try {
 
                 $createDistributionGroupSplatParams = @{
                     Name               = "dg_$($resource.DisplayName)"
-                    PrimarySmtpAddress = "dg_$(Get-SanitizedGroupName $resource.DisplayName)@schoutenenzn.nl"
+                    PrimarySmtpAddress = "dg_$(Get-SanitizedGroupName $resource.DisplayName)@$($actionContext.Configuration.Organization)"
                     Verbose            = $false
                     ErrorAction        = "Stop"
                 }
@@ -310,7 +310,7 @@ try {
                         })
                 }
                 else {
-                    Write-Warning "DryRun: Would [$correlationField] with [$correlationValue] for created distribution group with id [$($createDistributionGroupResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                    Write-Warning "DryRun: Would update [$correlationField] with [$correlationValue] for created distribution group with id [$($createDistributionGroupResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                 }
                 #endregion Update distribution group
 
