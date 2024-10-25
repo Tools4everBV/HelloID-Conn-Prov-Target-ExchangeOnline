@@ -154,12 +154,13 @@ try {
 
     $getMicrosoftExchangeOnlineAccountSplatParams = @{
         Identity    = $actionContext.References.Account
+        Properties  = 'HiddenFromAddressListsEnabled'
         Verbose     = $false
         ErrorAction = "Stop"
     }
 
-    $correlatedAccount = Get-Mailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName, HiddenFromAddressListsEnabled
-        
+    $correlatedAccount = Get-EXOMailbox @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName, HiddenFromAddressListsEnabled
+
     Write-Verbose "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
 
