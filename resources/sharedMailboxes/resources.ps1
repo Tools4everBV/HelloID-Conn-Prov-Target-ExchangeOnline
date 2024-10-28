@@ -7,14 +7,6 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # Determine all the sub-permissions that needs to be Granted/Updated/Revoked
 $currentPermissions = @{ }
 foreach ($permission in $actionContext.CurrentPermissions) {
@@ -23,10 +15,10 @@ foreach ($permission in $actionContext.CurrentPermissions) {
 
 # PowerShell commands to import
 $commands = @(
-    "Get-User"
-    , "Get-EXOMailbox"
-    , "New-Mailbox"
-    , "Set-Mailbox"
+    "Get-User",
+    "Get-EXOMailbox",
+    "New-Mailbox",
+    "Set-Mailbox"
 )
 
 #region functions
@@ -156,9 +148,9 @@ try {
         ErrorAction = "Stop"
     }
 
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
 
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
 
     #region Create access token
@@ -184,7 +176,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Information "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -204,9 +196,9 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
     
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Get Shared Mailboxes
@@ -274,7 +266,7 @@ try {
                     ErrorAction        = "Stop"
                 }
 
-                Write-Verbose "SplatParams: $($createSharedMailboxSplatParams | ConvertTo-Json)"
+                Write-Information "SplatParams: $($createSharedMailboxSplatParams | ConvertTo-Json)"
 
                 if (-Not($actionContext.DryRun -eq $true)) {     
                     $createSharedMailboxResponse = New-Mailbox @createSharedMailboxSplatParams
@@ -302,10 +294,10 @@ try {
                     ErrorAction       = "Stop"
                 }
 
-                Write-Verbose "SplatParams: $($updateSharedMailboxSplatParams | ConvertTo-Json)"
+                Write-Information "SplatParams: $($updateSharedMailboxSplatParams | ConvertTo-Json)"
 
                 if (-Not($actionContext.DryRun -eq $true)) {     
-                    $updateSharedMailboxResponse = Set-Mailbox @updateSharedMailboxSplatParams
+                    $null = Set-Mailbox @updateSharedMailboxSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action  = "" # Optional
@@ -326,7 +318,7 @@ try {
                 $actionMessage = "correlating to shared mailbox for resource: $($resource | ConvertTo-Json)"
 
                 if (-Not($actionContext.DryRun -eq $true)) {
-                    Write-Verbose "Correlated to shared mailbox with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
+                    Write-Information "Correlated to shared mailbox with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
                 }
                 else {
                     Write-Warning "DryRun: Would correlate to shared mailbox with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
@@ -370,9 +362,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
     
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Check if auditLogs contains errors, if no errors are found, set success to true

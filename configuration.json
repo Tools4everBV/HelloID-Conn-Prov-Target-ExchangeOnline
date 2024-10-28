@@ -42,15 +42,5 @@
       "placeholder": "3lib1234NwDvx.6abc98M._r0yz_7h_B34",
       "required": true
     }
-  },
-  {
-    "key": "isDebug",
-    "type": "checkbox",
-    "defaultValue": false,
-    "templateOptions": {
-      "label": "Toggle debug logging",
-      "description": "When toggled, debug logging will be displayed",
-      "required": false
-    }
   }
 ]

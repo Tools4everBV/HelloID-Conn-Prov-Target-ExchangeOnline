@@ -1,23 +1,16 @@
 #################################################
 # HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Delete
+# Sets auto-reply configuration
 # PowerShell V2
 #################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # PowerShell commands to import
 $commands = @(
-    "Get-EXOMailbox"
-    , "Set-MailboxAutoReplyConfiguration"
+    "Get-EXOMailbox",
+    "Set-MailboxAutoReplyConfiguration"
 )
 
 #region functions
@@ -95,9 +88,9 @@ try {
         ErrorAction = "Stop"
     }
  
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
  
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
  
     #region Create access token
@@ -123,7 +116,7 @@ try {
  
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
  
-    Write-Verbose "Created access token."
+    Write-Information "Created access token."
     #endregion Create access token
  
     #region Connect to Microsoft Exchange Online
@@ -143,9 +136,9 @@ try {
         ErrorAction           = "Stop"
     }
  
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
          
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Get account
@@ -160,7 +153,7 @@ try {
 
     $correlatedAccount = Get-EXOMailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName
         
-    Write-Verbose "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
+    Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
 
     #region Calulate action
@@ -188,7 +181,7 @@ try {
                 ErrorAction     = "Stop"
             }
     
-            Write-Verbose "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
+            Write-Information "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
 
             if (-Not($actionContext.DryRun -eq $true)) {       
                 $null = Set-MailboxAutoReplyConfiguration  @setMicrosoftExchangeOnlineAccountSplatParams
@@ -252,9 +245,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
     
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Check if auditLogs contains errors, if no errors are found, set success to true

@@ -7,14 +7,6 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # PowerShell commands to import
 $commands = @(
     "Add-MailboxPermission"  
@@ -162,9 +154,9 @@ try {
         ErrorAction = "Stop"
     }
 
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
 
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
 
     #region Create access token
@@ -190,7 +182,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Information "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -210,9 +202,9 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
   
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Define desired permissions
@@ -222,7 +214,7 @@ try {
     if (-Not($actionContext.Operation -eq "revoke")) {
         # Example: Contract Based Logic:
         foreach ($contract in $personContext.Person.Contracts) {
-            Write-Verbose "Contract: $($contract.ExternalId). In condition: $($contract.Context.InConditions)"
+            Write-Information "Contract: $($contract.ExternalId). In condition: $($contract.Context.InConditions)"
             if ($contract.Context.InConditions -OR ($actionContext.DryRun -eq $true)) {
                 $actionMessage = "querying Exchange Online Sharedmailbox for department: $($contract.Department | ConvertTo-Json)"
         
@@ -240,7 +232,7 @@ try {
                     ErrorAction          = "Stop"
                 }
         
-                Write-Verbose "Quering ExO Mailbox where [$correlationField -eq '$correlationValue']"
+                Write-Information "Quering ExO Mailbox where [$correlationField -eq '$correlationValue']"
 
                 $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
                 $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
@@ -300,9 +292,9 @@ try {
                     }
 
                     if (-Not($actionContext.DryRun -eq $true)) {
-                        Write-Verbose "SplatParams: $($revokeFullAccessPermissionSplatParams | ConvertTo-Json)"
+                        Write-Information "SplatParams: $($revokeFullAccessPermissionSplatParams | ConvertTo-Json)"
 
-                        $revokeFullAccessPermissionResponse = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
+                        $null = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action = "" # Optional
@@ -365,9 +357,9 @@ try {
                     }
 
                     if (-Not($actionContext.DryRun -eq $true)) {
-                        Write-Verbose "SplatParams: $($revokeSendAsPermissionSplatParams | ConvertTo-Json)"
+                        Write-Information "SplatParams: $($revokeSendAsPermissionSplatParams | ConvertTo-Json)"
 
-                        $revokeSendAsPermissionresponse = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
+                        $null = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action = "" # Optional
@@ -430,9 +422,9 @@ try {
                     }
 
                     if (-Not($actionContext.DryRun -eq $true)) {
-                        Write-Verbose "SplatParams: $($revokeSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
+                        Write-Information "SplatParams: $($revokeSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
 
-                        $revokeSendOnBehalfPermissionResponse = Set-Mailbox @revokeSendOnBehalfPermissionSplatParams
+                        $null = Set-Mailbox @revokeSendOnBehalfPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action = "" # Optional
@@ -514,9 +506,9 @@ try {
                 }
 
                 if (-Not($actionContext.DryRun -eq $true)) {
-                    Write-Verbose "SplatParams: $($grantFullAccessPermissionSplatParams | ConvertTo-Json)"
+                    Write-Information "SplatParams: $($grantFullAccessPermissionSplatParams | ConvertTo-Json)"
 
-                    $grantFullAccessPermissionResponse = Add-MailboxPermission @grantFullAccessPermissionSplatParams
+                    $null = Add-MailboxPermission @grantFullAccessPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action = "" # Optional
@@ -547,9 +539,9 @@ try {
                 }
 
                 if (-Not($actionContext.DryRun -eq $true)) {
-                    Write-Verbose "SplatParams: $($grantSendAsPermissionSplatParams | ConvertTo-Json)"
+                    Write-Information "SplatParams: $($grantSendAsPermissionSplatParams | ConvertTo-Json)"
 
-                    $grantSendAsPermissionResponse = Add-RecipientPermission @grantSendAsPermissionSplatParams
+                    $null = Add-RecipientPermission @grantSendAsPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action = "" # Optional
@@ -579,9 +571,9 @@ try {
                 }
 
                 if (-Not($actionContext.DryRun -eq $true)) {
-                    Write-Verbose "SplatParams: $($grantSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
+                    Write-Information "SplatParams: $($grantSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
 
-                    $grantSendOnBehalfPermissionResponse = Set-Mailbox @grantSendOnBehalfPermissionSplatParams
+                    $null = Set-Mailbox @grantSendOnBehalfPermissionSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action = "" # Optional
@@ -630,9 +622,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
   
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Handle case of empty defined dynamic permissions. Without this the entitlement will error.

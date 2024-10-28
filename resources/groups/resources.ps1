@@ -7,14 +7,6 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # Determine all the sub-permissions that needs to be Granted/Updated/Revoked
 $currentPermissions = @{ }
 foreach ($permission in $actionContext.CurrentPermissions) {
@@ -155,9 +147,9 @@ try {
         ErrorAction = "Stop"
     }
 
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
 
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
 
     #region Create access token
@@ -183,7 +175,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Information "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -203,9 +195,9 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
     
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Get distribution groups
@@ -270,7 +262,7 @@ try {
                     ErrorAction        = "Stop"
                 }
 
-                Write-Verbose "SplatParams: $($createDistributionGroupSplatParams | ConvertTo-Json)"
+                Write-Information "SplatParams: $($createDistributionGroupSplatParams | ConvertTo-Json)"
 
                 if (-Not($actionContext.DryRun -eq $true)) {     
                     $createDistributionGroupResponse = New-DistributionGroup @createDistributionGroupSplatParams
@@ -298,10 +290,10 @@ try {
                     ErrorAction       = "Stop"
                 }
 
-                Write-Verbose "SplatParams: $($updateDistributionGroupSplatParams | ConvertTo-Json)"
+                Write-Information "SplatParams: $($updateDistributionGroupSplatParams | ConvertTo-Json)"
 
                 if (-Not($actionContext.DryRun -eq $true)) {     
-                    $updateDistributionGroupResponse = Set-DistributionGroup @updateDistributionGroupSplatParams
+                    $null = Set-DistributionGroup @updateDistributionGroupSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action  = "" # Optional
@@ -322,7 +314,7 @@ try {
                 $actionMessage = "correlating to distribution group for resource: $($resource | ConvertTo-Json)"
 
                 if (-Not($actionContext.DryRun -eq $true)) {
-                    Write-Verbose "Correlated to distribution group with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
+                    Write-Information "Correlated to distribution group with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
                 }
                 else {
                     Write-Warning "DryRun: Would correlate to distribution group with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
@@ -366,9 +358,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
     
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Check if auditLogs contains errors, if no errors are found, set success to true

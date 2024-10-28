@@ -7,15 +7,6 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
-
 # PowerShell commands to import
 $commands = @(
     "Remove-MailboxPermission"
@@ -124,9 +115,9 @@ try {
         ErrorAction = "Stop"
     }
 
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
 
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
 
     #region Create access token
@@ -152,7 +143,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Information "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -172,9 +163,9 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
     
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Revoke Mailbox permission
@@ -197,9 +188,9 @@ try {
                     }
 
                     if (-Not($actionContext.DryRun -eq $true)) {
-                        Write-Verbose "SplatParams: $($revokeFullAccessPermissionSplatParams | ConvertTo-Json)"
+                        Write-Information "SplatParams: $($revokeFullAccessPermissionSplatParams | ConvertTo-Json)"
 
-                        $revokeFullAccessPermissionResponse = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
+                        $null = Remove-MailboxPermission @revokeFullAccessPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
@@ -260,9 +251,9 @@ try {
                     }
 
                     if (-Not($actionContext.DryRun -eq $true)) {
-                        Write-Verbose "SplatParams: $($revokeSendAsPermissionSplatParams | ConvertTo-Json)"
+                        Write-Information "SplatParams: $($revokeSendAsPermissionSplatParams | ConvertTo-Json)"
 
-                        $revokeSendAsPermissionresponse = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
+                        $null = Remove-RecipientPermission @revokeSendAsPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
@@ -322,9 +313,9 @@ try {
                     }
 
                     if (-Not($actionContext.DryRun -eq $true)) {
-                        Write-Verbose "SplatParams: $($revokeSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
+                        Write-Information "SplatParams: $($revokeSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
 
-                        $revokeSendOnBehalfPermissionResponse = Set-Mailbox @revokeSendOnBehalfPermissionSplatParams
+                        $null = Set-Mailbox @revokeSendOnBehalfPermissionSplatParams
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
@@ -404,9 +395,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
     
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Check if auditLogs contains errors, if no errors are found, set success to true

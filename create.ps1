@@ -7,14 +7,6 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # Define PowerShell commands to import
 $commands = @(
     "Get-User",
@@ -153,9 +145,9 @@ try {
         ErrorAction = "Stop"
     }
 
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
 
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
 
     #region Create access token
@@ -181,7 +173,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token."
+    Write-Information "Created access token."
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -201,9 +193,9 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Get account
@@ -220,7 +212,7 @@ try {
     $getMicrosoftExchangeOnlineAccountResponse = Get-EXOMailbox @getMicrosoftExchangeOnlineAccountSplatParams
     $correlatedAccount = $getMicrosoftExchangeOnlineAccountResponse | Select-Object $accountPropertiesToQuery
         
-    Write-Verbose "Queried account where [$($correlationField)] = [$($correlationValue)]. Result: $($correlatedAccount  | ConvertTo-Json)"
+    Write-Information "Queried account where [$($correlationField)] = [$($correlationValue)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
 
     #region Calulate action
@@ -312,9 +304,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
     
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Check if auditLogs contains errors, if no errors are found, set success to true

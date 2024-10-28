@@ -7,14 +7,6 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Set debug logging
-switch ($actionContext.Configuration.isDebug) {
-    $true { $VerbosePreference = "Continue" }
-    $false { $VerbosePreference = "SilentlyContinue" }
-}
-$InformationPreference = "Continue"
-$WarningPreference = "Continue"
-
 # Define PowerShell commands to import
 $commands = @(
     "Set-Mailbox"
@@ -121,9 +113,9 @@ try {
         ErrorAction = "Stop"
     }
 
-    $importModuleResponse = Import-Module @importModuleSplatParams
+    $null = Import-Module @importModuleSplatParams
 
-    Write-Verbose "Imported module [$($importModuleSplatParams.Name)]"
+    Write-Information "Imported module [$($importModuleSplatParams.Name)]"
     #endregion Create access token
 
     #region Create access token
@@ -149,7 +141,7 @@ try {
 
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-    Write-Verbose "Created access token"
+    Write-Information "Created access token"
     #endregion Create access token
 
     #region Connect to Microsoft Exchange Online
@@ -169,9 +161,9 @@ try {
         ErrorAction           = "Stop"
     }
 
-    $createExchangeSessionResponse = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
     
-    Write-Verbose "Connected to Microsoft Exchange Online"
+    Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
     #region Enable litigation hold
@@ -186,10 +178,10 @@ try {
         ErrorAction            = "Stop"
     }
 
-    Write-Verbose "SplatParams: $($enableLitigationHoldSplatParams | ConvertTo-Json)"
+    Write-Information "SplatParams: $($enableLitigationHoldSplatParams | ConvertTo-Json)"
 
     if (-Not($actionContext.DryRun -eq $true)) {
-        $enableLitigationHoldSplatResponse = Set-Mailbox @enableLitigationHoldSplatParams
+        $null = Set-Mailbox @enableLitigationHoldSplatParams
 
         $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
@@ -233,9 +225,9 @@ finally {
         ErrorAction = "Stop"
     }
 
-    $deleteExchangeSessionResponse = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
+    $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
     
-    Write-Verbose "Disconnected from Microsoft Exchange Online"
+    Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
 
     # Check if auditLogs contains errors, if no errors are found, set success to true
