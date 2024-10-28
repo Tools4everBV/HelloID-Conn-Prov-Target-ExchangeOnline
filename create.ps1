@@ -199,7 +199,7 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Get account
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-exomailbox?view=exchange-ps
     $actionMessage = "querying account where [$($correlationField)] = [$($correlationValue)]"
 
     $getMicrosoftExchangeOnlineAccountSplatParams = @{
