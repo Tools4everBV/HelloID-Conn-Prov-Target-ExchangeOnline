@@ -45,8 +45,8 @@ If you want to create Exchange Online (Office 365) users and/or mailboxes, pleas
 1. **HelloID Environment**:
    - Set up your _HelloID_ environment.
    - Install the _HelloID_ Provisioning agent **On-Premises**.
-2. **Microsoft Exchange Online PowerShell Module**:
-   - [Download link](https://www.powershellgallery.com/packages/ExchangeOnlineManagement)
+2. **Microsoft Exchange Online PowerShell Module v3.3.0**:
+   - [Download link](https://www.powershellgallery.com/packages/ExchangeOnlineManagement/3.3.0)
    - [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
 3. **Graph API Credentials**:
    - Create an **App Registration** in Microsoft Entra ID.
