@@ -15,7 +15,6 @@
   - [Getting started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Connection settings](#connection-settings)
-    - [Connection settings](#connection-settings-1)
     - [Correlation configuration](#correlation-configuration)
     - [Available lifecycle actions](#available-lifecycle-actions)
     - [Field mapping](#field-mapping)
@@ -61,23 +60,12 @@ If you want to create Exchange Online (Office 365) users and/or mailboxes, pleas
    - The **Exchange Administrator** role should provide the required permissions 
 
 ### Connection settings
-
-The following settings are required to connect to the API.
-
-| Setting  | Description                        | Mandatory |
-| -------- | ---------------------------------- | --------- |
-| UserName | The UserName to connect to the API | Yes       |
-| Password | The Password to connect to the API | Yes       |
-| BaseUrl  | The URL to the API                 | Yes       |
-
-
-### Connection settings
 The following settings are required to connect.
 
 | Setting               | Description                                                                                | Mandatory |
 | --------------------- | ------------------------------------------------------------------------------------------ | --------- |
 | Entra ID Organization | The name of the organization to connect to and where the Entra ID App Registration exists. | Yes       |
-| Entra ID Tenant ID    | Id of the Entra ID tenant                                                                     | Yes       |
+| Entra ID Tenant ID    | Id of the Entra ID tenant                                                                  | Yes       |
 | Entra ID App Id       | The Application (client) ID of the Entra ID App Registration with Exchange Permissions     | Yes       |
 | Entra ID App Secret   | Secret of the Entra ID App Registration with Exchange Permissions                          | Yes       |
 
