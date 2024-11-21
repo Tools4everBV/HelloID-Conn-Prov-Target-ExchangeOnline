@@ -167,7 +167,7 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Set Mailbox Regional Configuration
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailboxregionalconfiguration?view=exchange-ps
     $actionMessage = "setting Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]"
 
     $setMailboxRegionalConfigurationSplatParams = @{
@@ -184,7 +184,7 @@ try {
     Write-Information "SplatParams: $($enableLitigationHoldSplatParams | ConvertTo-Json)"
 
     if (-Not($actionContext.DryRun -eq $true)) {
-        $null = Set-Mailbox @setMailboxRegionalConfigurationSplatParams
+        $null = Set-MailboxRegionalConfiguration @setMailboxRegionalConfigurationSplatParams
 
         $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
