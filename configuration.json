@@ -1,57 +1,47 @@
 [
   {
-    "key": "AzureADOrganization",
+    "key": "Organization",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD Organization",
-      "placeholder": "enyoi.onmicrosoft.com",
-      "description": "The Tenant Name of the organization in Azure",
+      "label": "Organization",
+      "placeholder": "organization.onmicrosoft.com",
+      "description": "You must use the primary .onmicrosoft.com domain of the organization. Using anything else may lead to inconsistent results.",
       "required": true
     }
   },
   {
-    "key": "AzureADTenantId",
+    "key": "TenantID",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD Tenant Id",
+      "label": "App Registration Directory (tenant) ID",
       "placeholder": "1234567-2538-4922-80e2-b890abcde",
-      "description": "The ID of the Tenant in Azure",
+      "description": "",
       "required": true
     }
   },
   {
-    "key": "AzureADAppId",
+    "key": "AppId",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD App Id",
+      "label": "App Registration Application (client) ID",
       "placeholder": "1234567-2538-4922-80e2-b890abcde",
-      "description": "The ID of the App Registration in Azure with the Exchange permissions to the specfied organization",
+      "description": "",
       "required": true
     }
   },
   {
-    "key": "AzureADAppSecret",
+    "key": "AppSecret",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "Azure AD App Secret",
+      "label": "App Registration Client Secret",
       "type": "password",
       "placeholder": "1234567-2538-4922-80e2-b890abcde",
-      "description": "The Secret of the App Registration in Azure with the Exchange permissions to the specfied organization",
+      "description": "",
       "required": true
-    }
-  },
-  {
-    "key": "isDebug",
-    "type": "checkbox",
-    "defaultValue": false,
-    "templateOptions": {
-      "label": "Toggle debug logging",
-      "description": "When toggled, debug logging will be displayed",
-      "required": false
     }
   }
 ]
