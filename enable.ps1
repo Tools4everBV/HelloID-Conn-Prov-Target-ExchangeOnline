@@ -9,7 +9,7 @@
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-Mailbox",
+    "Get-EXOMailbox",
     "Set-Mailbox"
 )
 

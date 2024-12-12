@@ -131,7 +131,7 @@ try {
         }
     }
     else {
-        Write-Warning "Correlation is disabled."
+        throw "Configuration of correlation is mandatory."
     }
     #endregion Verify correlation configuration and properties
 

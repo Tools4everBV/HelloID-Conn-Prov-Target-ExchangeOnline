@@ -16,7 +16,7 @@ foreach ($permission in $actionContext.CurrentPermissions) {
 # PowerShell commands to import
 $commands = @(
     "Get-User",
-    "Get-EXOMailbox",
+    "Get-EXORecipient",
     "New-Mailbox",
     "Set-Mailbox"
 )
