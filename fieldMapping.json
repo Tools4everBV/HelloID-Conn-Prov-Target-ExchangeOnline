@@ -80,6 +80,48 @@
           "StoreInAccountData": false
         }
       ]
+    },
+    {
+      "Name": "HiddenFromAddressListsEnabled",
+      "Description": "[Required] if using the enable and disable script for HiddenFromAddressListsEnabled.\nRemoving the field from the create action will result in correlation only within the create script.\n",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create",
+            "Disable"
+          ],
+          "MappingMode": "Fixed",
+          "Value": "\"true\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        },
+        {
+          "MapForActions": [
+            "Enable"
+          ],
+          "MappingMode": "Fixed",
+          "Value": "\"false\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "CustomAttribute1",
+      "Description": "[Required] if using the update script for updating custom attributes.\nAt least one custom attribute is required when using the update script to update custom attributes.",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Update"
+          ],
+          "MappingMode": "Field",
+          "Value": "\"Person.PrimaryContract.Title.Name\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
     }
   ],
   "UniqueFieldNames": []

@@ -67,9 +67,42 @@ function Resolve-ExchangeOnlineError {
     }
 }
 
+function Convert-StringToBoolean($obj) {
+    if ($obj -is [PSCustomObject]) {
+        foreach ($property in $obj.PSObject.Properties) {
+            $value = $property.Value
+            if ($value -is [string]) {
+                $lowercaseValue = $value.ToLower()
+                if ($lowercaseValue -eq "true") {
+                    $obj.$($property.Name) = $true
+                }
+                elseif ($lowercaseValue -eq "false") {
+                    $obj.$($property.Name) = $false
+                }
+            }
+            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
+                $obj.$($property.Name) = Convert-StringToBoolean $value
+            }
+            elseif ($value -is [System.Collections.IList]) {
+                for ($i = 0; $i -lt $value.Count; $i++) {
+                    $value[$i] = Convert-StringToBoolean $value[$i]
+                }
+                $obj.$($property.Name) = $value
+            }
+        }
+    }
+    return $obj
+}
 #endregion functions
 
 try {
+    #region account
+    $account = [PSCustomObject]$actionContext.Data.PsObject.Copy()
+
+    # Convert the properties of account object containing "TRUE" or "FALSE" to boolean 
+    $account = Convert-StringToBoolean $account
+    #endRegion account
+        
     #region Verify account reference
     $actionMessage = "verifying account reference"
     
@@ -153,6 +186,7 @@ try {
     }
 
     $correlatedAccount = Get-EXOMailbox @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName, HiddenFromAddressListsEnabled
+    $outputContext.PreviousData.HiddenFromAddressListsEnabled = [string]$correlatedAccount.HiddenFromAddressListsEnabled
 
     Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
@@ -161,7 +195,7 @@ try {
     $actionMessage = "calculating action"
 
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        if ($correlatedAccount.HiddenFromAddressListsEnabled -eq $false) {
+        if ($correlatedAccount.HiddenFromAddressListsEnabled -ne $account.HiddenFromAddressListsEnabled) {
             $actionAccount = "Disable"
         }
         else {
@@ -180,7 +214,7 @@ try {
 
             $setMicrosoftExchangeOnlineAccountSplatParams = @{
                 Identity                      = $actionContext.References.Account
-                HiddenFromAddressListsEnabled = $true
+                HiddenFromAddressListsEnabled = $account.HiddenFromAddressListsEnabled
                 Verbose                       = $false
                 ErrorAction                   = "Stop"
             }
@@ -190,15 +224,15 @@ try {
             if (-Not($actionContext.DryRun -eq $true)) {       
                 $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
 
-                Write-Information "Account with id [$($actionContext.References.Account)] successfully disabled [HiddenFromAddressListsEnabled = true]"
+                Write-Information "Account with id [$($actionContext.References.Account)] successfully disabled [HiddenFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
 
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($actionContext.References.Account)] successfully disabled [HiddenFromAddressListsEnabled = true]"
+                        Message = "Account with id [$($actionContext.References.Account)] successfully disabled [HiddenFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
                         IsError = $false
                     })
             }
             else {
-                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HiddenFromAddressListsEnabled = true]."
+                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HiddenFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
             }
 
             break

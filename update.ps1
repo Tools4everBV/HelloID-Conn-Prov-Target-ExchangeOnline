@@ -1,6 +1,6 @@
 #################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Create
-# Correlate to account
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Update
+# Updates custom attributes
 # PowerShell V2
 #################################################
 
@@ -9,7 +9,6 @@
 
 # Define PowerShell commands to import
 $commands = @(
-    "Get-User",
     "Get-EXOMailbox",
     "Set-Mailbox"
 )
@@ -97,44 +96,16 @@ function Convert-StringToBoolean($obj) {
 #endregion functions
 
 try {
-    #region account
-    # Define correlation
-    $correlationField = $actionContext.CorrelationConfiguration.accountField
-    $correlationValue = $actionContext.CorrelationConfiguration.personFieldValue
-
-    # Define account object
-    $account = [PSCustomObject]$actionContext.Data.PsObject.Copy()
-
-    # Define properties to query
-    $accountPropertiesToQuery = @("guid") + $account.PsObject.Properties.Name | Select-Object -Unique
-
-    # Remove properties of account object with null-values
-    $account.PsObject.Properties | ForEach-Object {
-        # Remove properties with null-values
-        if ($_.Value -eq $null) {
-            $account.PsObject.Properties.Remove("$($_.Name)")
-        }
+    #region Verify account reference and action context data
+    $actionMessage = "verifying account reference"
+    
+    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
+        throw "The account reference could not be found"
     }
-    # Convert the properties of account object containing "TRUE" or "FALSE" to boolean 
-    $account = Convert-StringToBoolean $account
-    #endRegion account
-
-    #region Verify correlation configuration and properties
-    $actionMessage = "verifying correlation configuration and properties"
-
-    if ($actionContext.CorrelationConfiguration.Enabled -eq $true) {
-        if ([string]::IsNullOrEmpty($correlationField)) {
-            throw "Correlation is enabled but not configured correctly."
-        }
-        
-        if ([string]::IsNullOrEmpty($correlationValue)) {
-            throw "The correlation value for [$correlationField] is empty. This is likely a mapping issue."
-        }
+    if ([string]::IsNullOrEmpty($($actionContext.Data))) {
+        throw "Action context data is empty, add fields to update action or remove the update script"
     }
-    else {
-        throw "Configuration of correlation is mandatory."
-    }
-    #endregion Verify correlation configuration and properties
+    #endregion Verify account reference and action context data
 
     #region Import module
     $actionMessage = "importing module [ExchangeOnlineManagement]"
@@ -200,42 +171,70 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Get account
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-exomailbox?view=exchange-ps
-    $actionMessage = "querying account where [$($correlationField)] = [$($correlationValue)]"
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
+    $actionMessage = "querying account where [Identity] = [$($actionContext.References.Account)]"
+
+    $accountPropertiesToQuery = @("Guid", "DisplayName") + $actionContext.Data.PsObject.Properties.Name | Select-Object -Unique
 
     $getMicrosoftExchangeOnlineAccountSplatParams = @{
-        Filter      = "$($correlationField) -eq '$($correlationValue)'"
+        Identity    = $actionContext.References.Account
+        Properties  = $accountPropertiesToQuery
         Verbose     = $false
         ErrorAction = "Stop"
     }
 
-    $getMicrosoftExchangeOnlineAccountResponse = $null
-    $getMicrosoftExchangeOnlineAccountResponse = Get-EXOMailbox @getMicrosoftExchangeOnlineAccountSplatParams
-    $correlatedAccount = $getMicrosoftExchangeOnlineAccountResponse | Select-Object $accountPropertiesToQuery
-        
-    Write-Information "Queried account where [$($correlationField)] = [$($correlationValue)]. Result: $($correlatedAccount  | ConvertTo-Json)"
+    $correlatedAccount = Get-EXOMailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object $accountPropertiesToQuery
+    
+    $outputContext.PreviousData = $correlatedAccount | Select-Object $actionContext.Data.PsObject.Properties.Name
+
+    Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
 
     #region Calulate action
     $actionMessage = "calculating action"
+
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        if ($account.PSObject.Properties.Name -Contains 'HiddenFromAddressListsEnabled') {
-            if ($correlatedAccount.HiddenFromAddressListsEnabled -ne $account.HiddenFromAddressListsEnabled) {
-                $actionAccount = "Update"
+        $accountPropertiesToCompare = $actionContext.Data | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
+
+        $accountSplatCompareProperties = @{
+            ReferenceObject  = $correlatedAccount.PSObject.Properties | Where-Object { $_.Name -in $accountPropertiesToCompare }
+            DifferenceObject = $actionContext.Data.PSObject.Properties | Where-Object { $_.Name -in $accountPropertiesToCompare }
+        }
+
+        if ($null -ne $accountSplatCompareProperties.ReferenceObject -and $null -ne $accountSplatCompareProperties.DifferenceObject) {
+            $accountPropertiesChanged = Compare-Object @accountSplatCompareProperties -PassThru
+            $accountOldProperties = $accountPropertiesChanged | Where-Object { $_.SideIndicator -eq "<=" }
+            $accountNewProperties = $accountPropertiesChanged | Where-Object { $_.SideIndicator -eq "=>" }
+        }
+
+
+        if ($accountNewProperties) {
+            # Create custom object with old and new values
+            $accountChangedPropertiesObject = [PSCustomObject]@{
+                OldValues = @{}
+                NewValues = @{}
             }
-            else {
-                $actionAccount = "Correlate"
+
+            # Add the old properties to the custom object with old and new values
+            foreach ($accountOldProperty in $accountOldProperties) {
+                $accountChangedPropertiesObject.OldValues.$($accountOldProperty.Name) = $accountOldProperty.Value
             }
+
+            # Add the new properties to the custom object with old and new values
+            foreach ($accountNewProperty in $accountNewProperties) {
+                $accountChangedPropertiesObject.NewValues.$($accountNewProperty.Name) = $accountNewProperty.Value
+            }
+
+            Write-Information "Changed properties: $($accountChangedPropertiesObject | ConvertTo-Json)"
+
+            $actionAccount = "Update"
         }
         else {
-            $actionAccount = "Correlate"
-        }   
+            $actionAccount = "NoChanges"
+        }
     }
-    elseif (($correlatedAccount | Measure-Object).count -eq 0) {
+    else {
         $actionAccount = "NotFound"
-    }
-    elseif (($correlatedAccount | Measure-Object).count -gt 1) {
-        $actionAccount = "MultipleFound"
     }
     #endregion Calulate action
     
@@ -245,71 +244,60 @@ try {
             $actionMessage = "updating account"
 
             $setMicrosoftExchangeOnlineAccountSplatParams = @{
-                Identity                      = $correlatedAccount.Guid
-                HiddenFromAddressListsEnabled = $account.HiddenFromAddressListsEnabled
-                Verbose                       = $false
-                ErrorAction                   = "Stop"
+                Identity         = $actionContext.References.Account
+                Verbose          = $false
+                ErrorAction      = "Stop"
             }
+
+            foreach ($accountNewProperty in $accountNewProperties) {
+                $setMicrosoftExchangeOnlineAccountSplatParams["$($accountNewProperty.Name)"] = $accountNewProperty.Value
+            }
+
         
             Write-Information "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
 
             if (-Not($actionContext.DryRun -eq $true)) {       
                 $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
 
-                Write-Information "Account with id [$($correlatedAccount.Guid)] successfully correlated and updated [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
+                Write-Information "Account with id [$($actionContext.References.Account)] successfully updated Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
 
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($correlatedAccount.Guid)] successfully correlated and updated [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
+                        Message = "Account with id [$($actionContext.References.Account)] successfully updated Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
                         IsError = $false
                     })
             }
             else {
-                Write-Warning "DryRun: Would correlate and set account with id [$($correlatedAccount.Guid)] to [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]."
+                Write-Warning "DryRun: Would update account with id [$($actionContext.References.Account)]. Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
             }
 
-            $outputContext.AccountReference = "$($correlatedAccount.Guid)"
-            $outputContext.Data = $correlatedAccount.PsObject.Copy()
-            $outputContext.AccountCorrelated = $true
             break
         }
 
-        "Correlate" {
-            #region Correlate account
-            $actionMessage = "correlating to account"
+        "NoChanges" {
+            $actionMessage = "no changes to account"
 
-            $outputContext.AccountReference = "$($correlatedAccount.Guid)"
-            $outputContext.Data = $correlatedAccount.PsObject.Copy()
+            $outputContext.Data = $actionContext.Data
+            $outputContext.PreviousData = $actionContext.Data
+
+            Write-Information "Account with id [$($actionContext.References.Account)] successfully checked. No changes required"
 
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    Action  = "CorrelateAccount" # Optionally specify a different action for this audit log
-                    Message = "Correlated to account with AccountReference: $($outputContext.AccountReference | ConvertTo-Json) on [$($correlationField)] = [$($correlationValue)]."
+                    Message = "Account with id [$($actionContext.References.Account)] successfully checked. No changes required"
                     IsError = $false
                 })
-
-            $outputContext.AccountCorrelated = $true
-            #endregion Correlate account
-
-            break
-        }
-
-        "MultipleFound" {
-            #region Multiple accounts found
-            $actionMessage = "correlating to account"
-
-            # Throw terminal error
-            throw "Multiple accounts found where [$($correlationField)] = [$($correlationValue)]. Please correct this so the persons are unique."
-            #endregion Multiple accounts found
 
             break
         }
 
         "NotFound" {
-            #region No account found
-            $actionMessage = "correlating to account"
+            $actionMessage = "updating account"
         
-            # Throw terminal error
-            throw "No account found where [$($correlationField)] = [$($correlationValue)] while this connector only supports correlation."
-            #endregion No account found
+            Write-Information "No account found where [Identity] = [$($actionContext.References.Account)]. Possibly indicating that it could be deleted, or not correlated."
+                
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Message = "No account found where [Identity] = [$($actionContext.References.Account)]. Possibly indicating that it could be deleted, or not correlated."
+                    IsError = $false
+                })
 
             break
         }
@@ -332,7 +320,6 @@ catch {
     Write-Warning $warningMessage
 
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-            # Action  = "" # Optional
             Message = $auditMessage
             IsError = $true
         })
@@ -355,10 +342,5 @@ finally {
     # Check if auditLogs contains errors, if no errors are found, set success to true
     if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
         $outputContext.Success = $true
-    }
-
-    # Check if accountreference is set, if not set, set this with default value as this must contain a value
-    if ([String]::IsNullOrEmpty($outputContext.AccountReference) -and $actionContext.DryRun -eq $true) {
-        $outputContext.AccountReference = "DryRun: Currently not available"
     }
 }

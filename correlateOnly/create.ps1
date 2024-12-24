@@ -10,8 +10,7 @@
 # Define PowerShell commands to import
 $commands = @(
     "Get-User",
-    "Get-EXOMailbox",
-    "Set-Mailbox"
+    "Get-EXOMailbox"
 )
 
 #region functions
@@ -219,17 +218,7 @@ try {
     #region Calulate action
     $actionMessage = "calculating action"
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        if ($account.PSObject.Properties.Name -Contains 'HiddenFromAddressListsEnabled') {
-            if ($correlatedAccount.HiddenFromAddressListsEnabled -ne $account.HiddenFromAddressListsEnabled) {
-                $actionAccount = "Update"
-            }
-            else {
-                $actionAccount = "Correlate"
-            }
-        }
-        else {
-            $actionAccount = "Correlate"
-        }   
+        $actionAccount = "Correlate"
     }
     elseif (($correlatedAccount | Measure-Object).count -eq 0) {
         $actionAccount = "NotFound"
@@ -241,38 +230,6 @@ try {
     
     #region Process
     switch ($actionAccount) {
-        "Update" {
-            $actionMessage = "updating account"
-
-            $setMicrosoftExchangeOnlineAccountSplatParams = @{
-                Identity                      = $correlatedAccount.Guid
-                HiddenFromAddressListsEnabled = $account.HiddenFromAddressListsEnabled
-                Verbose                       = $false
-                ErrorAction                   = "Stop"
-            }
-        
-            Write-Information "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
-
-            if (-Not($actionContext.DryRun -eq $true)) {       
-                $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
-
-                Write-Information "Account with id [$($correlatedAccount.Guid)] successfully correlated and updated [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
-
-                $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($correlatedAccount.Guid)] successfully correlated and updated [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
-                        IsError = $false
-                    })
-            }
-            else {
-                Write-Warning "DryRun: Would correlate and set account with id [$($correlatedAccount.Guid)] to [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]."
-            }
-
-            $outputContext.AccountReference = "$($correlatedAccount.Guid)"
-            $outputContext.Data = $correlatedAccount.PsObject.Copy()
-            $outputContext.AccountCorrelated = $true
-            break
-        }
-
         "Correlate" {
             #region Correlate account
             $actionMessage = "correlating to account"
