@@ -97,7 +97,7 @@ The following lifecycle actions are available:
 | delete.ps1                                  | Set mailbox auto reply configuration                                                             |
 | disable.ps1                                 | Sets Hide from address list to mapped value (default true)                                       |
 | enable.ps1                                  | Sets Hide from address list to mapped value (default false)                                      |
-| update.ps1                                  | Sets Custom attribute(s)                                                                         |
+| update.ps1                                  | Sets custom attribute(s)                                                                         |
 | sharedMailboxes - permissions.ps1           | List sharedMailboxes as permissions                                                              |
 | sharedMailboxes - grantPermission.ps1       | Grant sharedMailbox membership to an account                                                     |
 | sharedMailboxes - revokePermission.ps1      | Revoke sharedMailbox membership from an account                                                  |
