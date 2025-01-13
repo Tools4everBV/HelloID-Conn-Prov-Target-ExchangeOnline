@@ -90,31 +90,33 @@ The correlation configuration is used to specify which properties will be used t
 
 The following lifecycle actions are available:
 
-| Action                                      | Description                                                |
-| ------------------------------------------- | ---------------------------------------------------------- |
-| create.ps1                                  | Correlate to an account                                    |
-| delete.ps1                                  | Set mailbox auto reply configuration                       |
-| disable.ps1                                 | Sets Hide from address list to true                        |
-| enable.ps1                                  | Sets Hide from address list to false                       |
-| sharedMailboxes - permissions.ps1           | List sharedMailboxes as permissions                        |
-| sharedMailboxes - grantPermission.ps1       | Grant sharedMailbox membership to an account               |
-| sharedMailboxes - revokePermission.ps1      | Revoke sharedMailbox membership from an account            |
-| sharedMailboxes - resources.ps1             | Create sharedMailboxes from resources                      |
-| sharedMailboxes - subPermissions.ps1        | Grant/Revoke sharedMailbox membership from an account      |
-| groups - permissions.ps1                    | List distribution groups as permissions                    |
-| groups - grantPermission.ps1                | Grant distribution group membership to an account          |
-| groups - revokePermission.ps1               | Revoke distribution group membership from an account       |
-| groups - resources.ps1                      | Create distribution groups from resources                  |
-| groups - subPermissions.ps1                 | Grant/Revoke distribution group membership from an account |
-| folderPermission - permissions.ps1          | Mailbox folder permissions settings                        |
-| folderPermission - grantPermission.ps1      | Grant folder permissions settings                          |
-| regionalConfiguration - permissions.ps1     | Mailbox regional configuration settings                    |
-| regionalConfiguration - grantPermission.ps1 | Grant regional configuration settings                      |
-| litigationHold - permissions.ps1            | Mailbox litigation hold settings                           |
-| litigationHold - grantPermission.ps1        | Grant litigation hold settings                             |
-| litigationHold - revokePermission.ps1       | Revoke litigation hold settings                            |
-| configuration.json                          | Default _configuration.json_                               |
-| fieldMapping.json                           | Default _fieldMapping.json_                                |
+| Action                                      | Description                                                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| correlateOnly - create.ps1                  | Correlate to an account                                                                          |
+| create.ps1                                  | Correlate account and sets Hide from address list to mapped value (default true), only if mapped |
+| delete.ps1                                  | Set mailbox auto reply configuration                                                             |
+| disable.ps1                                 | Sets Hide from address list to mapped value (default true)                                       |
+| enable.ps1                                  | Sets Hide from address list to mapped value (default false)                                      |
+| update.ps1                                  | Sets custom attribute(s)                                                                         |
+| sharedMailboxes - permissions.ps1           | List sharedMailboxes as permissions                                                              |
+| sharedMailboxes - grantPermission.ps1       | Grant sharedMailbox membership to an account                                                     |
+| sharedMailboxes - revokePermission.ps1      | Revoke sharedMailbox membership from an account                                                  |
+| sharedMailboxes - resources.ps1             | Create sharedMailboxes from resources                                                            |
+| sharedMailboxes - subPermissions.ps1        | Grant/Revoke sharedMailbox membership from an account                                            |
+| groups - permissions.ps1                    | List distribution groups as permissions                                                          |
+| groups - grantPermission.ps1                | Grant distribution group membership to an account                                                |
+| groups - revokePermission.ps1               | Revoke distribution group membership from an account                                             |
+| groups - resources.ps1                      | Create distribution groups from resources                                                        |
+| groups - subPermissions.ps1                 | Grant/Revoke distribution group membership from an account                                       |
+| folderPermission - permissions.ps1          | Mailbox folder permissions settings                                                              |
+| folderPermission - grantPermission.ps1      | Grant folder permissions settings                                                                |
+| regionalConfiguration - permissions.ps1     | Mailbox regional configuration settings                                                          |
+| regionalConfiguration - grantPermission.ps1 | Grant regional configuration settings                                                            |
+| litigationHold - permissions.ps1            | Mailbox litigation hold settings                                                                 |
+| litigationHold - grantPermission.ps1        | Grant litigation hold settings                                                                   |
+| litigationHold - revokePermission.ps1       | Revoke litigation hold settings                                                                  |
+| configuration.json                          | Default _configuration.json_                                                                     |
+| fieldMapping.json                           | Default _fieldMapping.json_                                                                      |
 
 ### Field mapping
 

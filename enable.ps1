@@ -96,6 +96,13 @@ function Convert-StringToBoolean($obj) {
 #endregion functions
 
 try {
+    #region account
+    $account = [PSCustomObject]$actionContext.Data.PsObject.Copy()
+
+    # Convert the properties of account object containing "TRUE" or "FALSE" to boolean 
+    $account = Convert-StringToBoolean $account
+    #endRegion account
+    
     #region Verify account reference
     $actionMessage = "verifying account reference"
     
@@ -179,7 +186,8 @@ try {
     }
 
     $correlatedAccount = Get-EXOMailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName, HiddenFromAddressListsEnabled
-        
+    $outputContext.PreviousData.HiddenFromAddressListsEnabled = [string]$correlatedAccount.HiddenFromAddressListsEnabled
+
     Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
 
@@ -187,7 +195,7 @@ try {
     $actionMessage = "calculating action"
 
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        if ($correlatedAccount.HiddenFromAddressListsEnabled -eq $true) {
+        if ($correlatedAccount.HiddenFromAddressListsEnabled -ne $account.HiddenFromAddressListsEnabled) {
             $actionAccount = "Enable"
         }
         else {
@@ -202,11 +210,11 @@ try {
     #region Process
     switch ($actionAccount) {
         "Enable" {
-            $actionMessage = "enabeling account"
+            $actionMessage = "enabling account"
 
             $setMicrosoftExchangeOnlineAccountSplatParams = @{
                 Identity                      = $actionContext.References.Account
-                HiddenFromAddressListsEnabled = $false
+                HiddenFromAddressListsEnabled = $account.HiddenFromAddressListsEnabled
                 Verbose                       = $false
                 ErrorAction                   = "Stop"
             }
@@ -216,15 +224,15 @@ try {
             if (-Not($actionContext.DryRun -eq $true)) {       
                 $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
 
-                Write-Information "Account with id [$($actionContext.References.Account)] successfully enabled [HideFromAddressListsEnabled = false]"
+                Write-Information "Account with id [$($actionContext.References.Account)] successfully enabled [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
 
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($actionContext.References.Account)] successfully enabled [HideFromAddressListsEnabled = false]"
+                        Message = "Account with id [$($actionContext.References.Account)] successfully enabled [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]"
                         IsError = $false
                     })
             }
             else {
-                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HideFromAddressListsEnabled = false]."
+                Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [HideFromAddressListsEnabled = $($account.HiddenFromAddressListsEnabled)]."
             }
 
             break
