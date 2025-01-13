@@ -19,7 +19,7 @@
     },
     {
       "Name": "guid",
-      "Description": "[Required] Account Refference is written back to account data",
+      "Description": "[Required] Account Reference is written back to account data",
       "Type": "Text",
       "MappingActions": [
         {
