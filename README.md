@@ -45,9 +45,9 @@ If you want to create Exchange Online (Office 365) users and/or mailboxes, pleas
    - Set up your _HelloID_ environment.
    - Install the _HelloID_ Provisioning agent **On-Premises**.
 2. **Microsoft Exchange Online PowerShell Module v3.3.0**:
-   - [Download link](https://www.powershellgallery.com/packages/ExchangeOnlineManagement/3.3.0)
-     - Using a higher version than `v3.3.0` of the Exchange Online Management module can result in timeouts when using the `Get-EXOMailbox` command.
-   - [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
+   - [Download link](https://www.powershellgallery.com/packages/ExchangeOnlineManagement)
+     - When timeouts occur while using the `Get-EXOMailbox` command (e.g., when retrieving permissions), downgrading to `v3.3.0` may be a solution.
+     - [Microsoft documentation](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps)
 3. **Graph API Credentials**:
    - Create an **App Registration** in Microsoft Entra ID.
    - Add API permissions for your app:
