@@ -166,12 +166,22 @@ try {
     #region Calulate action
     $actionMessage = "calculating action"
 
+    $account = [PSCustomObject]$actionContext.Data.PsObject.Copy()
+
+    # Remove properties of account object with null-values
+    $account.PsObject.Properties | ForEach-Object {
+        # Remove properties with null-values
+        if ($_.Value -eq $null) {
+            $account.PsObject.Properties.Remove("$($_.Name)")
+        }
+    }
+
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        $accountPropertiesToCompare = $actionContext.Data | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
+        $accountPropertiesToCompare = $account | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
 
         $accountSplatCompareProperties = @{
             ReferenceObject  = $correlatedAccount.PSObject.Properties | Where-Object { $_.Name -in $accountPropertiesToCompare }
-            DifferenceObject = $actionContext.Data.PSObject.Properties | Where-Object { $_.Name -in $accountPropertiesToCompare }
+            DifferenceObject = $account.PSObject.Properties | Where-Object { $_.Name -in $accountPropertiesToCompare }
         }
 
         if ($null -ne $accountSplatCompareProperties.ReferenceObject -and $null -ne $accountSplatCompareProperties.DifferenceObject) {
