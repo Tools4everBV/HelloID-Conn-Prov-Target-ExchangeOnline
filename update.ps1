@@ -147,7 +147,7 @@ try {
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
     $actionMessage = "querying account where [Identity] = [$($actionContext.References.Account)]"
 
-    $accountPropertiesToQuery = @("Guid", "DisplayName") + $actionContext.Data.PsObject.Properties.Name | Select-Object -Unique
+    $accountPropertiesToQuery = @("guid", "DisplayName") + $actionContext.Data.PsObject.Properties.Name | Select-Object -Unique
 
     $getMicrosoftExchangeOnlineAccountSplatParams = @{
         Identity    = $actionContext.References.Account
