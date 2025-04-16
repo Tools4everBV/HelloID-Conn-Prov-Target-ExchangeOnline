@@ -101,21 +101,8 @@ try {
     $correlationField = $actionContext.CorrelationConfiguration.accountField
     $correlationValue = $actionContext.CorrelationConfiguration.personFieldValue
 
-    # Define account object
-    $account = [PSCustomObject]$actionContext.Data.PsObject.Copy()
-
     # Define properties to query
-    $accountPropertiesToQuery = @("guid") + $account.PsObject.Properties.Name | Select-Object -Unique
-
-    # Remove properties of account object with null-values
-    $account.PsObject.Properties | ForEach-Object {
-        # Remove properties with null-values
-        if ($_.Value -eq $null) {
-            $account.PsObject.Properties.Remove("$($_.Name)")
-        }
-    }
-    # Convert the properties of account object containing "TRUE" or "FALSE" to boolean 
-    $account = Convert-StringToBoolean $account
+    $accountPropertiesToQuery = @("guid") + $outputContext.PsObject.Properties.Name | Select-Object -Unique
     #endRegion account
 
     #region Verify correlation configuration and properties
