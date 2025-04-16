@@ -67,33 +67,6 @@ function Resolve-ExchangeOnlineError {
         Write-Output $httpErrorObj
     }
 }
-
-function Convert-StringToBoolean($obj) {
-    if ($obj -is [PSCustomObject]) {
-        foreach ($property in $obj.PSObject.Properties) {
-            $value = $property.Value
-            if ($value -is [string]) {
-                $lowercaseValue = $value.ToLower()
-                if ($lowercaseValue -eq "true") {
-                    $obj.$($property.Name) = $true
-                }
-                elseif ($lowercaseValue -eq "false") {
-                    $obj.$($property.Name) = $false
-                }
-            }
-            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
-                $obj.$($property.Name) = Convert-StringToBoolean $value
-            }
-            elseif ($value -is [System.Collections.IList]) {
-                for ($i = 0; $i -lt $value.Count; $i++) {
-                    $value[$i] = Convert-StringToBoolean $value[$i]
-                }
-                $obj.$($property.Name) = $value
-            }
-        }
-    }
-    return $obj
-}
 #endregion functions
 
 try {
@@ -175,7 +148,7 @@ try {
                 #region Revoke Full Access from account
                 try {
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-mailboxpermission?view=exchange-ps
-                    $actionMessage = "revoking [FullAccess] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+                    $actionMessage = "revoking [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
                     $revokeFullAccessPermissionSplatParams = @{
                         Identity        = $actionContext.References.Permission.id
@@ -194,12 +167,12 @@ try {
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
-                                Message = "Revoked [FullAccess] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                Message = "Revoked [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                                 IsError = $false
                             })
                     }
                     else {
-                        Write-Warning "DryRun: Would revoke [FullAccess] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                        Write-Warning "DryRun: Would revoke [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                     }
                 }
                 catch {
@@ -239,7 +212,7 @@ try {
                 #region Revoke Send As from account
                 try {
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-recipientpermission?view=exchange-ps
-                    $actionMessage = "revoking [SendAs] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+                    $actionMessage = "revoking [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
                     $revokeSendAsPermissionSplatParams = @{
                         Identity     = $actionContext.References.Permission.id
@@ -257,12 +230,12 @@ try {
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
-                                Message = "Revoked [SendAs] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                Message = "Revoked [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                                 IsError = $false
                             })
                     }
                     else {
-                        Write-Warning "DryRun: Would revoke [SendAs] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                        Write-Warning "DryRun: Would revoke [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                     }
                 }
                 catch {
@@ -302,7 +275,7 @@ try {
                 #region Revoke Send On Behalf from account
                 try {
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
-                    $actionMessage = "revoking [SendOnBehalf] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+                    $actionMessage = "revoking [SendOnBehalf] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
                     $revokeSendOnBehalfPermissionSplatParams = @{
                         Identity            = $actionContext.References.Permission.id
@@ -319,12 +292,12 @@ try {
 
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 # Action  = "" # Optional
-                                Message = "Revoked [SendOnBehalf] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                Message = "Revoked [SendOnBehalf] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                                 IsError = $false
                             })
                     }
                     else {
-                        Write-Warning "DryRun: Would revoke [SendOnBehalf] to mailbox [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                        Write-Warning "DryRun: Would revoke [SendOnBehalf] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
                     }
                 }
                 catch {
