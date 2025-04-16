@@ -65,33 +65,6 @@ function Resolve-ExchangeOnlineError {
         Write-Output $httpErrorObj
     }
 }
-
-function Convert-StringToBoolean($obj) {
-    if ($obj -is [PSCustomObject]) {
-        foreach ($property in $obj.PSObject.Properties) {
-            $value = $property.Value
-            if ($value -is [string]) {
-                $lowercaseValue = $value.ToLower()
-                if ($lowercaseValue -eq "true") {
-                    $obj.$($property.Name) = $true
-                }
-                elseif ($lowercaseValue -eq "false") {
-                    $obj.$($property.Name) = $false
-                }
-            }
-            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
-                $obj.$($property.Name) = Convert-StringToBoolean $value
-            }
-            elseif ($value -is [System.Collections.IList]) {
-                for ($i = 0; $i -lt $value.Count; $i++) {
-                    $value[$i] = Convert-StringToBoolean $value[$i]
-                }
-                $obj.$($property.Name) = $value
-            }
-        }
-    }
-    return $obj
-}
 #endregion functions
 
 try {
@@ -167,73 +140,32 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Remove account from group
-    try {
-        # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-distributiongroupmember?view=exchange-ps
-        $actionMessage = "revoking group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-distributiongroupmember?view=exchange-ps
+    $actionMessage = "revoking group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
-        $revokePermissionSplatParams = @{
-            Identity                        = $actionContext.References.Permission.id
-            Member                          = $actionContext.References.Account
-            BypassSecurityGroupManagerCheck = $true
-            Confirm                         = $false
-            Verbose                         = $false
-            ErrorAction                     = "Stop"
-        }
-
-        if (-Not($actionContext.DryRun -eq $true)) {
-            Write-Information "SplatParams: $($revokePermissionSplatParams | ConvertTo-Json)"
-
-            $null = Remove-DistributionGroupMember @revokePermissionSplatParams
-
-            $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "Revoked group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                    IsError = $false
-                })
-        }
-        else {
-            Write-Warning "DryRun: Would revoke group [$($actionContext.References.Permission.Name)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-        }
+    $revokePermissionSplatParams = @{
+        Identity                        = $actionContext.References.Permission.Id
+        Member                          = $actionContext.References.Account
+        BypassSecurityGroupManagerCheck = $true
+        Confirm                         = $false
+        Verbose                         = $false
+        ErrorAction                     = "Stop"
     }
-    catch {
-        $ex = $PSItem
-        if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
-            $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $errorObj = Resolve-ExchangeOnlineError -ErrorObject $ex
-            $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-            $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-        }
-        else {
-            $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-            $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-        }
 
-        if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
-            $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
-                    IsError = $false
-                })
-        }
-        elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
-            $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "Skipped $($actionMessage). Reason: Group no longer exists."
-                    IsError = $false
-                })
-        }
-        elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
-            $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    # Action  = "" # Optional
-                    Message = "Skipped $($actionMessage). Reason: User no longer exists."
-                    IsError = $false
-                })
-        }
-        else {
-            throw $auditMessage
-        }
+    if (-Not($actionContext.DryRun -eq $true)) {
+        Write-Information "SplatParams: $($revokePermissionSplatParams | ConvertTo-Json)"
+
+        $null = Remove-DistributionGroupMember @revokePermissionSplatParams
+
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Revoked group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                IsError = $false
+            })
     }
-    #endregion Remove account from group
+    else {
+        Write-Warning "DryRun: Would revoke group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+    }
 }
 catch {
     $ex = $PSItem
@@ -248,14 +180,37 @@ catch {
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
 
-    Write-Warning $warningMessage
-
-    $outputContext.AuditLogs.Add([PSCustomObject]@{
-            # Action  = "" # Optional
-            Message = $auditMessage
-            IsError = $true
-        })
+    if ($ex.CategoryInfo.Reason -eq 'MemberNotFoundException') {
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
+                IsError = $false
+            })
+    }
+    elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Permission.Id)*")) {
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Skipped $($actionMessage). Reason: Group no longer exists."
+                IsError = $false
+            })
+    }
+    elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Account)*")) {
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = "Skipped $($actionMessage). Reason: User no longer exists."
+                IsError = $false
+            })
+    }
+    else {
+        Write-Warning $warningMessage
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                # Action  = "" # Optional
+                Message = $auditMessage
+                IsError = $true
+            })
+    }
 }
+#endregion Remove account from group
 finally {
     #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
