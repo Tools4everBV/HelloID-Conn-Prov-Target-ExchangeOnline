@@ -7,6 +7,9 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Permission definition settings
+$accessRights = @("FullAccess", "SendAs") # SendOnBehalf
+
 # PowerShell commands to import
 $commands = @(
     "Remove-MailboxPermission"
@@ -142,9 +145,9 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Revoke Mailbox permission
-    foreach ($accessRight in $actionContext.References.Permission.AccessRights) {
+    foreach ($accessRight in $accessRights) {
         switch ($accessRight) {
-            "Full Access" {
+            "FullAccess" {
                 #region Revoke Full Access from account
                 try {
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-mailboxpermission?view=exchange-ps
@@ -208,7 +211,7 @@ try {
                 }
                 #endregion Revoke Full Access from account
             }
-            "Send As" {
+            "SendAs" {
                 #region Revoke Send As from account
                 try {
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-recipientpermission?view=exchange-ps
@@ -271,7 +274,7 @@ try {
                 }
                 #endregion Revoke Send As from account
             }
-            "Send on Behalf" {
+            "SendOnBehalf" {
                 #region Revoke Send On Behalf from account
                 try {
                     # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps

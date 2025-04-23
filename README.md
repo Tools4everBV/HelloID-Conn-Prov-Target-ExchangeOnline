@@ -39,7 +39,7 @@
 | **Permissions**                     | ✅         | Retrieve, Grant, Revoke                 | Groups, shared mailboxes, folder permissions, litigation hold, regional configuration                                                          |
 | **Resources**                       | ✅         | -                                       | For groups and shared mailboxes                                                                                                                |
 | **Entitlement Import: Accounts**    | ✅         | -                                       |                                                                                                                                                |
-| **Entitlement Import: Permissions** | ✅         | -                                       | Only for the new shared mailboxes scripts. ⚠️Warning this new shared mailbox scripts are not backwards compatible!⚠️                             |
+| **Entitlement Import: Permissions** | ✅         | -                                       | ⚠️Warning the new separate entitlements scripts for shared mailboxes are not backwards compatible!⚠️                                             |
 
 ## Introduction
 For this connector we have the option to correlate to and/or update Exchange Online (Office 365) users and/or mailboxes and provision permission(s) to a group and/or shared mailbox.

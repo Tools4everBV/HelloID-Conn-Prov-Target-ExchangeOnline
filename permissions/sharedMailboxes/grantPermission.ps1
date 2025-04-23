@@ -7,6 +7,9 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Permission definition settings
+$accessRights = @("FullAccess", "SendAs") # SendOnBehalf
+
 # PowerShell commands to import
 $commands = @(
     "Add-MailboxPermission"
@@ -142,9 +145,9 @@ try {
     #endregion Connect to Microsoft Exchange Online
 
     #region Grant Mailbox permission
-    foreach ($accessRight in $actionContext.References.Permission.AccessRights) {
+    foreach ($accessRight in $accessRights) {
         switch ($accessRight) {
-            "Full Access" {
+            "FullAccess" {
                 #region Grant Full Access to account
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-mailboxpermission?view=exchange-ps
                 $actionMessage = "granting [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -176,7 +179,7 @@ try {
                 }
                 #endregion Grant Full Access to account
             }
-            "Send As" {
+            "SendAs" {
                 #region Grant Send As to account
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-recipientpermission?view=exchange-ps
                 $actionMessage = "granting [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
@@ -206,7 +209,7 @@ try {
                 }
                 #endregion Grant Send As to account
             }
-            "Send on Behalf" {
+            "SendOnBehalf" {
                 #region Grant Send On Behalf to account
                 # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
                 $actionMessage = "granting [SendOnBehalf] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"

@@ -1,17 +1,11 @@
 #################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-List
-# List groups as permissions
-# Currently only Mail-enabled Security Groups and Distribution Groups are supported by the Exchange Online Management module
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-Import
+# Correlate to permission
 # PowerShell V2
 #################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-
-# Define PowerShell commands to import
-$commands = @(
-    "Get-DistributionGroup"
-)
 
 #region functions
 function Resolve-ExchangeOnlineError {
@@ -63,64 +57,31 @@ function Resolve-ExchangeOnlineError {
         catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
-        Write-Output $httpErrorObj
+        # Write-Output $httpErrorObj
+        return $httpErrorObj
     }
-}
-
-function Convert-StringToBoolean($obj) {
-    if ($obj -is [PSCustomObject]) {
-        foreach ($property in $obj.PSObject.Properties) {
-            $value = $property.Value
-            if ($value -is [string]) {
-                $lowercaseValue = $value.ToLower()
-                if ($lowercaseValue -eq "true") {
-                    $obj.$($property.Name) = $true
-                }
-                elseif ($lowercaseValue -eq "false") {
-                    $obj.$($property.Name) = $false
-                }
-            }
-            elseif ($value -is [PSCustomObject] -or $value -is [System.Collections.IDictionary]) {
-                $obj.$($property.Name) = Convert-StringToBoolean $value
-            }
-            elseif ($value -is [System.Collections.IList]) {
-                for ($i = 0; $i -lt $value.Count; $i++) {
-                    $value[$i] = Convert-StringToBoolean $value[$i]
-                }
-                $obj.$($property.Name) = $value
-            }
-        }
-    }
-    return $obj
 }
 #endregion functions
 
 try {
-    #region Import module
+    Write-Information 'Starting target distribution groups permissions import'
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = $commands
+        Cmdlet      = 'Get-User,Get-Mailbox,Get-DistributionGroup,Get-DistributionGroupMember'
         Verbose     = $false
         ErrorAction = "Stop"
     }
-
     $null = Import-Module @importModuleSplatParams
-
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Create access token
 
-    #region Create access token
     $actionMessage = "creating access token"
-
     $createAccessTokenBody = @{
         grant_type    = "client_credentials"
         client_id     = $actionContext.Configuration.AppId
         client_secret = $actionContext.Configuration.AppSecret
         resource      = "https://outlook.office365.com"
     }
-
     $createAccessTokenSplatParams = @{
         Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
         Headers         = $headers
@@ -131,16 +92,11 @@ try {
         Verbose         = $false
         ErrorAction     = "Stop"
     }
-
     $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
-
     Write-Information "Created access token"
-    #endregion Create access token
 
-    #region Connect to Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "connecting to Microsoft Exchange Online"
-
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
@@ -153,81 +109,59 @@ try {
         SkipLoadingFormatData = $true
         ErrorAction           = "Stop"
     }
-
     $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-    
     Write-Information "Connected to Microsoft Exchange Online"
-    #endregion Connect to Microsoft Exchange Online
 
-    #region Get Mail-enabled Security Groups
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
-    $actionMessage = "querying Microsoft Mail-enabled Security Groups"
-
-    $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams = @{
-        Filter      = "RecipientTypeDetails -eq 'MailUniversalSecurityGroup' -and IsDirSynced -eq 'False'"
-        Verbose     = $false
-        ErrorAction = "Stop"
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps#
+    $actionMessage = "getting all distribution groups from Microsoft Exchange Online"
+    $getAllDistributionGroupsParams = @{
+        Filter      = "IsDirSynced -eq 'False'"
+        ResultSize  = 'Unlimited'
+        ErrorAction = 'Stop'
     }
+    $getDistributionGroups = Get-DistributionGroup @getAllDistributionGroupsParams
+    $distributionGroups = $getDistributionGroups | Select-Object Guid, DisplayName, RecipientTypeDetails, Description
+    Write-Information "Successfully queried [$($distributionGroups.count)] distribution groups"
+    # Cleanup for memory
+    $getDistributionGroups = $null
 
-    $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse = $null
-    $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse = Get-DistributionGroup @getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams
-    $microsoftExchangeOnlineMailEnabledSecurityGroups = $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse | Select-Object Guid, DisplayName
-
-    Write-Information "Queried Microsoft Mail-enabled Security Groups. Result count: $(($microsoftExchangeOnlineMailEnabledSecurityGroups | Measure-Object).Count)"
-    #endregion Get Microsoft Mail-enabled Security Groups
-
-    #region Send results to HelloID
-    $microsoftExchangeOnlineMailEnabledSecurityGroups | ForEach-Object {
-        # Shorten DisplayName to max. 100 chars
-        $displayName = "Mail-enabled Security Group - $($_.DisplayName)"
-        $displayName = $displayName.substring(0, [System.Math]::Min(100, $displayName.Length)) 
+    foreach ($distributionGroup in $distributionGroups) {
+        $getDistributionGroupMembersParams = @{
+            Identity    = $distributionGroup.Guid
+            ResultSize  = 'Unlimited'
+            ErrorAction = 'Stop'
+        }
+        $distributionGroupMembers = @()
+        $distributionGroupMembers = (Get-DistributionGroupMember @getDistributionGroupMembersParams).guid
         
-        $outputContext.Permissions.Add(
-            @{
-                displayName    = $displayName
-                identification = @{
-                    Id = $_.Guid
-                }
+        if ($distributionGroup -eq 'MailUniversalSecurityGroup') {
+            $displayname = "Mail-enabled Security Group - $($distributionGroup.DisplayName)"
+        }
+        else {
+            $displayname = "Distribution Group - $($distributionGroup.DisplayName)"
+        }
+
+        $numberOfAccounts = $distributionGroupMembers.Count
+        $permission = @{
+            PermissionReference = @{
+                Id = $distributionGroup.Guid
+            }       
+            Description         = $distributionGroup.Description[0]
+            DisplayName         = $displayname
+        }
+        # Batch permissions based on the amount of account references, 
+        # to make sure the output objects are not above the limit
+        $accountsBatchSize = 500
+        if ($numberOfAccounts -gt 0) {
+            $accountsBatchSize = 500
+            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
+            foreach ($batch in $batches) {
+                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })
+                Write-Output $permission
             }
-        )
+        }
     }
-    #endregion Send results to HelloID
-
-    #region Get Distribution Groups
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
-    $actionMessage = "querying Microsoft Distribution Groups"
-
-    $getMicrosoftExchangeOnlineDistributionGroupsSplatParams = @{
-        Filter      = "RecipientTypeDetails -ne 'MailUniversalSecurityGroup' -and IsDirSynced -eq 'False'"
-        ResultSize  = "Unlimited"
-        Verbose     = $false
-        ErrorAction = "Stop"
-    }
-
-    $getMicrosoftExchangeOnlineDistributionGroupsResponse = $null
-    $getMicrosoftExchangeOnlineDistributionGroupsResponse = Get-DistributionGroup @getMicrosoftExchangeOnlineDistributionGroupsSplatParams
-    $microsoftExchangeOnlineDistributionGroups = $getMicrosoftExchangeOnlineDistributionGroupsResponse | Select-Object Guid, DisplayName
-
-
-    Write-Information "Queried Microsoft Distribution Groups. Result count: $(($microsoftExchangeOnlineDistributionGroups | Measure-Object).Count)"
-    #endregion Get Microsoft Distribution Groups
-
-    #region Send results to HelloID
-    $microsoftExchangeOnlineDistributionGroups | ForEach-Object {
-        # Shorten DisplayName to max. 100 chars
-        $displayName = "Distribution Group - $($_.DisplayName)"
-        $displayName = $displayName.substring(0, [System.Math]::Min(100, $displayName.Length)) 
-        
-        $outputContext.Permissions.Add(
-            @{
-                displayName    = $displayName
-                identification = @{
-                    Id = $_.Guid
-                }
-            }
-        )
-    }
-    #endregion Send results to HelloID
+    Write-Information 'Target permission import for distribution groups is completed'
 }
 catch {
     $ex = $PSItem
@@ -241,27 +175,16 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-    
-    # Set Success to false
-    $outputContext.Success = $false
-
     Write-Warning $warningMessage
-
-    # Required to write an error as the listing of permissions doesn't show auditlog
     Write-Error $auditMessage
 }
 finally {
-    #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "disconnecting to Microsoft Exchange Online"
-
+    $actionMessage = "disconnecting from Microsoft Exchange Online"
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
         ErrorAction = "Stop"
     }
-
     $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
-    
     Write-Information "Disconnected from Microsoft Exchange Online"
-    #endregion Disconnect from Microsoft Exchange Online
 }

@@ -161,10 +161,7 @@ try {
             @{
                 displayName    = $displayName
                 identification = @{
-                    Id           = $_.Guid
-                    Name         = $_.DisplayName
-                    Type         = "Shared Mailbox"
-                    AccessRights = @("Full Access", "Send As") # Options:  Full Access,Send As, Send on Behalf
+                    Id = $_.Guid
                 }
             }
         )
