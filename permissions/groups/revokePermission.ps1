@@ -208,21 +208,21 @@ try {
             $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
         }
 
-        if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
+        if ($ex.Exception.Data.RemoteException.Properties.Type.Value -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
                     IsError = $false
                 })
         }
-        elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+        elseif ($ex.Exception.Data.RemoteException.Properties.Type.Value -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Skipped $($actionMessage). Reason: Group no longer exists."
                     IsError = $false
                 })
         }
-        elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+        elseif ($ex.Exception.Data.RemoteException.Properties.Type.Value -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Skipped $($actionMessage). Reason: User no longer exists."

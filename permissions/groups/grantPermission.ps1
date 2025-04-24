@@ -208,7 +208,7 @@ try {
             $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
         }
 
-        if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+        if ($ex.Exception.Data.RemoteException.Properties.Type.Value -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     # Action  = "" # Optional
                     Message = "Skipped $($actionMessage). Reason: User is already a member."
