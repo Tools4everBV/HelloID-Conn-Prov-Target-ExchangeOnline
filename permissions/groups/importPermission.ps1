@@ -131,10 +131,12 @@ try {
             ResultSize  = 'Unlimited'
             ErrorAction = 'Stop'
         }
+        $groupMemberResponse = Get-DistributionGroupMember @getDistributionGroupMembersParams
+        $userMailboxGroupMembers = $groupMemberResponse | Where-Object { $_.RecipientType -eq 'UserMailbox' }
         $distributionGroupMembers = @()
-        $distributionGroupMembers = (Get-DistributionGroupMember @getDistributionGroupMembersParams).guid
+        $distributionGroupMembers = ($userMailboxGroupMembers).guid
         
-        if ($distributionGroup -eq 'MailUniversalSecurityGroup') {
+        if ($distributionGroup.RecipientTypeDetails -eq 'MailUniversalSecurityGroup') {
             $displayname = "Mail-enabled Security Group - $($distributionGroup.DisplayName)"
         }
         else {
