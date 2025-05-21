@@ -11,6 +11,7 @@
 ## Table of Contents
 - [HelloID-Conn-Prov-Target-ExchangeOnline](#helloid-conn-prov-target-exchangeonline)
   - [Table of Contents](#table-of-contents)
+  - [Supported features:](#supported-features)
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
     - [Prerequisites](#prerequisites)
@@ -30,6 +31,15 @@
         - [Authentication and Authorization](#authentication-and-authorization)
   - [Getting help](#getting-help)
   - [HelloID docs](#helloid-docs)
+
+## Supported features:
+| Feature                             | Supported | Actions                                 | Remarks                                                                                                                                        |
+| ----------------------------------- | --------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Account Lifecycle**               | ✅         | Create, Update, Enable, Disable, Delete | Create is for correlating, Enable/Disable for hidefromaddresslist, update for editing mailbox attributes and delete for out of office messages |
+| **Permissions**                     | ✅         | Retrieve, Grant, Revoke                 | Groups, shared mailboxes, folder permissions, litigation hold, regional configuration                                                          |
+| **Resources**                       | ✅         | -                                       | For groups and shared mailboxes                                                                                                                |
+| **Entitlement Import: Accounts**    | ✅         | -                                       |                                                                                                                                                |
+| **Entitlement Import: Permissions** | ✅         | -                                       | Only for the new shared mailboxes scripts. ⚠️Warning this new shared mailbox scripts are not backwards compatible!⚠️                             |
 
 ## Introduction
 For this connector we have the option to correlate to and/or update Exchange Online (Office 365) users and/or mailboxes and provision permission(s) to a group and/or shared mailbox.

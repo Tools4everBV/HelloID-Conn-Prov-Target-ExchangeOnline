@@ -2,7 +2,7 @@
   "Version": "v1",
   "MappingFields": [
     {
-      "Name": "guid",
+      "Name": "Guid",
       "Description": "[Required] Account Reference is written back to account data",
       "Type": "Text",
       "MappingActions": [

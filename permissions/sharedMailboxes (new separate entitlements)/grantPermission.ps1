@@ -1,15 +1,17 @@
-#################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-Revoke
-# Revoke groupmembership from account
+#####################################################
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-SharedMailboxes-Grant
+# Grant shared mailbox permission (full access, send as or send on behalf) to account
 # PowerShell V2
-#################################################
+#####################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
-# Define PowerShell commands to import
+# PowerShell commands to import
 $commands = @(
-    "Remove-DistributionGroupMember"
+    "Add-MailboxPermission"
+    , "Add-RecipientPermission"
+    , "Set-Mailbox"
 )
 
 #region functions
@@ -139,33 +141,101 @@ try {
     Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
-    #region Remove account from group
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-distributiongroupmember?view=exchange-ps
-    $actionMessage = "revoking group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+    #region Grant Mailbox permission
+    switch ($actionContext.References.Permission.Permission) {
+        "FullAccess" {
+            #region Grant Full Access to account
+            # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-mailboxpermission?view=exchange-ps
+            $actionMessage = "granting [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
 
-    $revokePermissionSplatParams = @{
-        Identity                        = $actionContext.References.Permission.Id
-        Member                          = $actionContext.References.Account
-        BypassSecurityGroupManagerCheck = $true
-        Confirm                         = $false
-        Verbose                         = $false
-        ErrorAction                     = "Stop"
+            $grantFullAccessPermissionSplatParams = @{
+                Identity        = $actionContext.References.Permission.id
+                User            = $actionContext.References.Account
+                AccessRights    = 'FullAccess'
+                InheritanceType = 'All'
+                AutoMapping     = $true
+                Confirm         = $false
+                Verbose         = $false
+                ErrorAction     = "Stop"
+            }
+
+            if (-Not($actionContext.DryRun -eq $true)) {
+                Write-Information "SplatParams: $($grantFullAccessPermissionSplatParams | ConvertTo-Json)"
+
+                $null = Add-MailboxPermission @grantFullAccessPermissionSplatParams
+
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        # Action  = "" # Optional
+                        Message = "Granted [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                        IsError = $false
+                    })
+            }
+            else {
+                Write-Warning "DryRun: Would grant [FullAccess] to mailbox with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+            }
+            #endregion Grant Full Access to account
+        }
+        "SendAs" {
+            #region Grant Send As to account
+            # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/add-recipientpermission?view=exchange-ps
+            $actionMessage = "granting [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+
+            $grantSendAsPermissionSplatParams = @{
+                Identity     = $actionContext.References.Permission.id
+                Trustee      = $actionContext.References.Account
+                AccessRights = 'SendAs'
+                Confirm      = $false
+                Verbose      = $false
+                ErrorAction  = "Stop"
+            }
+
+            if (-Not($actionContext.DryRun -eq $true)) {
+                Write-Information "SplatParams: $($grantSendAsPermissionSplatParams | ConvertTo-Json)"
+
+                $null = Add-RecipientPermission @grantSendAsPermissionSplatParams
+
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        # Action  = "" # Optional
+                        Message = "Granted [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                        IsError = $false
+                    })
+            }
+            else {
+                Write-Warning "DryRun: Would grant [SendAs] to mailbox with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+            }
+            #endregion Grant Send As to account
+        }
+        "SendOnBehalf" {
+            #region Grant Send On Behalf to account
+            # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
+            $actionMessage = "granting [SendOnBehalf] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+
+            $grantSendOnBehalfPermissionSplatParams = @{
+                Identity            = $actionContext.References.Permission.id
+                GrantSendOnBehalfTo = @{add = "$($actionContext.References.Account)" }
+                Confirm             = $false
+                Verbose             = $false
+                ErrorAction         = "Stop"
+            }
+
+            if (-Not($actionContext.DryRun -eq $true)) {
+                Write-Information "SplatParams: $($grantSendOnBehalfPermissionSplatParams | ConvertTo-Json)"
+
+                $null = Set-Mailbox @grantSendOnBehalfPermissionSplatParams
+
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        # Action  = "" # Optional
+                        Message = "Granted [SendOnBehalf] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                        IsError = $false
+                    })
+            }
+            else {
+                Write-Warning "DryRun: Would grant [SendOnBehalf] to mailbox with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+            }
+            #endregion Grant Send On Behalf to account
+        }
     }
-
-    if (-Not($actionContext.DryRun -eq $true)) {
-        Write-Information "SplatParams: $($revokePermissionSplatParams | ConvertTo-Json)"
-
-        $null = Remove-DistributionGroupMember @revokePermissionSplatParams
-
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Revoked group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                IsError = $false
-            })
-    }
-    else {
-        Write-Warning "DryRun: Would revoke group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-    }
+    #endregion Grant Mailbox permission
 }
 catch {
     $ex = $PSItem
@@ -180,41 +250,18 @@ catch {
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
 
-    if ($ex.CategoryInfo.Reason -eq 'MemberNotFoundException') {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
-                IsError = $false
-            })
-    }
-    elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Permission.Id)*")) {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Skipped $($actionMessage). Reason: Group no longer exists."
-                IsError = $false
-            })
-    }
-    elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Account)*")) {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Skipped $($actionMessage). Reason: User no longer exists."
-                IsError = $false
-            })
-    }
-    else {
-        Write-Warning $warningMessage
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = $auditMessage
-                IsError = $true
-            })
-    }
+    Write-Warning $warningMessage
+
+    $outputContext.AuditLogs.Add([PSCustomObject]@{
+            # Action  = "" # Optional
+            Message = $auditMessage
+            IsError = $true
+        })
 }
-#endregion Remove account from group
 finally {
     #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "disconnecting to Microsoft Exchange Online"
+    $actionMessage = "disconnecting from Microsoft Exchange Online"
 
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
