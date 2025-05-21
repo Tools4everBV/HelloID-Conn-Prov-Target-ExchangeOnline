@@ -148,6 +148,7 @@ try {
     $actionMessage = "querying account where [Identity] = [$($actionContext.References.Account)]"
 
     $accountPropertiesToQuery = @("guid", "displayname") + $($outputContext.Data.PsObject.Properties.Name).ToLower() | Select-Object -Unique
+
     $getMicrosoftExchangeOnlineAccountSplatParams = @{
         Identity    = $actionContext.References.Account
         Properties  = $accountPropertiesToQuery
@@ -240,14 +241,17 @@ try {
                 Write-Warning "DryRun: Would update account with id [$($actionContext.References.Account)]. Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
             }
 
+            if ($correlatedAccount.PSObject.Properties.Name -contains 'Guid') {
+                $outputContext.Data.Guid = $correlatedAccount.Guid
+            }
             break
         }
 
         "NoChanges" {
             $actionMessage = "no changes to account"
 
-            $outputContext.Data = $actionContext.Data
-            $outputContext.PreviousData = $actionContext.Data
+            $outputContext.Data = $correlatedAccount | Select-Object $outputContext.Data.PsObject.Properties.Name
+            $outputContext.PreviousData = $correlatedAccount | Select-Object $outputContext.Data.PsObject.Properties.Name
 
             Write-Information "Account with id [$($actionContext.References.Account)] successfully checked. No changes required"
 
