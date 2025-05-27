@@ -132,7 +132,7 @@ try {
             ErrorAction = 'Stop'
         }
         $groupMemberResponse = Get-DistributionGroupMember @getDistributionGroupMembersParams
-        $userMailboxGroupMembers = $groupMemberResponse | Where-Object { $_.RecipientType -eq 'UserMailbox' }
+        $userMailboxGroupMembers = $groupMemberResponse | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' }
         $distributionGroupMembers = @()
         $distributionGroupMembers = ($userMailboxGroupMembers).guid
         
