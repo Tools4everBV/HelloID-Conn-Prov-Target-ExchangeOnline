@@ -104,32 +104,6 @@ function Resolve-ExchangeOnlineError {
         Write-Output $httpErrorObj
     }
 }
-
-function Resolve-HTTPError {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory,
-            ValueFromPipeline
-        )]
-        [object]$ErrorObject
-    )
-    process {
-        $httpErrorObj = [PSCustomObject]@{
-            FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
-            MyCommand             = $ErrorObject.InvocationInfo.MyCommand
-            RequestUri            = $ErrorObject.TargetObject.RequestUri
-            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
-            ErrorMessage          = ''
-        }
-        if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.Powershell.Commands.HttpResponseException') {
-            $httpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
-        }
-        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
-            $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
-        }
-        Write-Output $httpErrorObj
-    }
-}
 #endregion functions
 
 #region Get Access Token
@@ -305,23 +279,23 @@ try {
                     $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                 }
 
-                if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberNotFoundException*") {
+                if ($ex.CategoryInfo.Reason -eq 'MemberNotFoundException') {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action = "" # Optional
+                            # Action  = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
                             IsError = $false
                         })
                 }
-                elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($permission.Name)*") {
+                elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($permission.Name)*")) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action = "" # Optional
+                            # Action  = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: Group no longer exists."
                             IsError = $false
                         })
                 }
-                elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Account)*")) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action = "" # Optional
+                            # Action  = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: User no longer exists."
                             IsError = $false
                         })
@@ -388,7 +362,7 @@ try {
                     $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                 }
 
-                if ($auditMessage -like "*Microsoft.Exchange.Management.Tasks.MemberAlreadyExistsException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                if ($ex.CategoryInfo.Reason -eq 'MemberAlreadyExistsException') {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action  = "" # Optional
                             Message = "Skipped $($actionMessage). Reason: User is already a member."

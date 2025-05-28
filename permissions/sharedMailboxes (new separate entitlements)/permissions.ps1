@@ -1,15 +1,16 @@
-#################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-Revoke
-# Revoke groupmembership from account
+#####################################################
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-SharedMailboxes-List
+# List shared mailboxes as permissions
 # PowerShell V2
-#################################################
+#####################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 # Define PowerShell commands to import
 $commands = @(
-    "Remove-DistributionGroupMember"
+    "Get-Recipient"
+    , "Get-EXORecipient"
 )
 
 #region functions
@@ -68,14 +69,6 @@ function Resolve-ExchangeOnlineError {
 #endregion functions
 
 try {
-    #region Verify account reference
-    $actionMessage = "verifying account reference"
-    
-    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
-        throw "The account reference could not be found"
-    }
-    #endregion Verify account reference
-
     #region Import module
     $actionMessage = "importing module [ExchangeOnlineManagement]"
     
@@ -139,33 +132,60 @@ try {
     Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 
-    #region Remove account from group
-    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/exchange/remove-distributiongroupmember?view=exchange-ps
-    $actionMessage = "revoking group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
-
-    $revokePermissionSplatParams = @{
-        Identity                        = $actionContext.References.Permission.Id
-        Member                          = $actionContext.References.Account
-        BypassSecurityGroupManagerCheck = $true
-        Confirm                         = $false
-        Verbose                         = $false
-        ErrorAction                     = "Stop"
+    #region Get Shared Mailboxes
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps
+    $actionMessage = "querying Microsoft Exchange Online Shared Mailboxes"
+    
+    $getMicrosoftExchangeOnlineSharedMailboxesSplatParams = @{
+        Properties           = @("Guid", "DisplayName")
+        RecipientTypeDetails = "SharedMailbox"
+        ResultSize           = "Unlimited"
+        Verbose              = $false
+        ErrorAction          = "Stop"
     }
 
-    if (-Not($actionContext.DryRun -eq $true)) {
-        Write-Information "SplatParams: $($revokePermissionSplatParams | ConvertTo-Json)"
+    $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
+    $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
+    $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object Guid, DisplayName
 
-        $null = Remove-DistributionGroupMember @revokePermissionSplatParams
+    Write-Information "Queried Microsoft Exchange Online Shared Mailboxes. Result count: $(($microsoftExchangeOnlineSharedMailboxes | Measure-Object).Count)"
+    #endregion Get Shared Mailboxes
 
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Revoked group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                IsError = $false
-            })
+    #region Send results to HelloID
+    $microsoftExchangeOnlineSharedMailboxes | ForEach-Object {
+        # Shorten DisplayName to max. 100 chars (83 because ' - Send on Behalf' is 17 char)
+        $displayName = "Shared Mailbox - $($_.DisplayName)"
+        $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
+
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Full Access'
+                identification = @{
+                    Id         = $_.Guid
+                    Permission = "FullAccess"
+                }
+            }
+        )
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Send As'
+                identification = @{
+                    Id         = $_.Guid
+                    Permission = "SendAs"
+                }
+            }
+        )
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Send on Behalf'
+                identification = @{
+                    Id         = $_.Guid
+                    Permission = "SendOnBehalf"
+                }
+            }
+        )
     }
-    else {
-        Write-Warning "DryRun: Would revoke group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.Id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-    }
+    #endregion Send results to HelloID
 }
 catch {
     $ex = $PSItem
@@ -179,42 +199,19 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
+    
+    # Set Success to false
+    $outputContext.Success = $false
 
-    if ($ex.CategoryInfo.Reason -eq 'MemberNotFoundException') {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Skipped $($actionMessage). Reason: User is already no longer a member."
-                IsError = $false
-            })
-    }
-    elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Permission.Id)*")) {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Skipped $($actionMessage). Reason: Group no longer exists."
-                IsError = $false
-            })
-    }
-    elseif (($ex.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') -and ($ex.Exception.Message -like "*$($actionContext.References.Account)*")) {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Skipped $($actionMessage). Reason: User no longer exists."
-                IsError = $false
-            })
-    }
-    else {
-        Write-Warning $warningMessage
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = $auditMessage
-                IsError = $true
-            })
-    }
+    Write-Warning $warningMessage
+
+    # Required to write an error as the listing of permissions doesn't show auditlog
+    Write-Error $auditMessage
 }
-#endregion Remove account from group
 finally {
     #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "disconnecting to Microsoft Exchange Online"
+    $actionMessage = "disconnecting from Microsoft Exchange Online"
 
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
@@ -225,9 +222,4 @@ finally {
     
     Write-Information "Disconnected from Microsoft Exchange Online"
     #endregion Disconnect from Microsoft Exchange Online
-
-    # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
-        $outputContext.Success = $true
-    }
 }
