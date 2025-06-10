@@ -72,8 +72,6 @@ function Resolve-ExchangeOnlineError {
 try {
     #region Verify account reference
     $actionMessage = "verifying account reference"
-
-    # $actionContext.References.Account = '2eb9a216-f621-4df9-b181-fdc1f1e8f097'
     
     if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
         throw "The account reference could not be found"
