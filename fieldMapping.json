@@ -122,6 +122,22 @@
           "StoreInAccountData": false
         }
       ]
+    },
+    {
+      "Name": "ExternalAudience",
+      "Description": "[Required] if using the delete script for enabling AutoReplyState",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Delete"
+          ],
+          "MappingMode": "Fixed",
+          "Value": "\"All\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
     }
   ],
   "UniqueFieldNames": []
