@@ -9,7 +9,7 @@
 
 # PowerShell commands to import
 $commands = @(
-    "Get-EXOMailbox",
+    "Get-MailboxAutoReplyConfiguration",
     "Set-MailboxAutoReplyConfiguration"
 )
 
@@ -145,26 +145,42 @@ try {
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-user?view=exchange-ps
     $actionMessage = "querying account where [Identity] = [$($actionContext.References.Account)]"
 
-    $getMicrosoftExchangeOnlineAccountSplatParams = @{
+    $getMailboxAutoReplyConfigSplatParams = @{
         Identity    = $actionContext.References.Account
         Verbose     = $false
         ErrorAction = "Stop"
     }
-
-    $correlatedAccount = Get-EXOMailbox  @getMicrosoftExchangeOnlineAccountSplatParams | Select-Object Guid, DisplayName
+    try {
+        $correlatedAccount = Get-MailboxAutoReplyConfiguration @getMailboxAutoReplyConfigSplatParams
+    }
+    catch {
+        if ($_ -like "*The operation couldn't be performed because Identity:`"$($actionContext.References.Account)`" couldn't be found*") {
+            $correlatedAccount = $null
+        }
+        else {
+            throw
+        }
+    }
         
-    Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
+    Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount | ConvertTo-Json)"
     #endregion Get account
 
     #region Calulate action
     $actionMessage = "calculating action"
 
     if (($correlatedAccount | Measure-Object).count -eq 1) {
-        $actionAccount = "Delete"
+        if ($correlatedAccount.AutoReplyState -eq $actionContext.Data.AutoReplyState) {
+            $actionAccount = "NoChanges"
+        }
+        else {
+            $actionAccount = "Delete"
+        }
     }
     else {
         $actionAccount = "NotFound"
     }
+
+    Write-Information "Action: $actionAccount"
     #endregion Calulate action
 
     #region Process
@@ -173,12 +189,13 @@ try {
             $actionMessage = "setting autoreply to account"
 
             $setMicrosoftExchangeOnlineAccountSplatParams = @{
-                Identity        = $actionContext.References.Account
-                AutoReplyState  = $actionContext.Data.AutoReplyState
-                InternalMessage = $actionContext.Data.InternalMessage
-                ExternalMessage = $actionContext.Data.ExternalMessage
-                Verbose         = $false
-                ErrorAction     = "Stop"
+                Identity         = $actionContext.References.Account
+                AutoReplyState   = $actionContext.Data.AutoReplyState
+                InternalMessage  = $actionContext.Data.InternalMessage
+                ExternalMessage  = $actionContext.Data.ExternalMessage
+                ExternalAudience = $actionContext.Data.ExternalAudience
+                Verbose          = $false
+                ErrorAction      = "Stop"
             }
     
             Write-Information "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
@@ -196,6 +213,17 @@ try {
             else {
                 Write-Warning "DryRun: Would set account with id [$($actionContext.References.Account)] to [AutoReplyState = $($actionContext.Data.AutoReplyState)]"
             }
+
+            break
+        }
+
+        "NoChanges" {
+            $actionMessage = "skipping setting autoreply to account"
+
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Message = "Account with AccountReference [$($actionContext.References.Account)] successfully deleted (skipped AutoReplyState already configured)"
+                    IsError = $false
+                })
 
             break
         }
