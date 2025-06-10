@@ -104,7 +104,7 @@ The following lifecycle actions are available:
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | correlateOnly - create.ps1                  | Correlate to an account                                                                          |
 | create.ps1                                  | Correlate account and sets Hide from address list to mapped value (default true), only if mapped |
-| delete.ps1                                  | Set mailbox auto reply configuration                                                             |
+| delete.ps1                                  | Set mailbox auto reply configuration (only when none is configured)                              |
 | disable.ps1                                 | Sets Hide from address list to mapped value (default true)                                       |
 | enable.ps1                                  | Sets Hide from address list to mapped value (default false)                                      |
 | update.ps1                                  | Sets custom attribute(s)                                                                         |
@@ -161,6 +161,7 @@ The following endpoints are used by the connector
 | Set-MailboxFolderPermission       | Set mailbox statistics                        |
 | Set-MailboxRegionalConfiguration  | Set mailbox regional configuration            |
 | Set-MailboxAutoReplyConfiguration | Set mailbox auto reply configuration          |
+| Get-MailboxAutoReplyConfiguration | Get mailbox auto reply configuration          |
 
 
 ### API documentation
