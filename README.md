@@ -54,7 +54,7 @@ If you want to create Exchange Online (Office 365) users and/or mailboxes, pleas
 URL of the icon used for the HelloID Provisioning target system.
 
 ```
-https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-EntraID/refs/heads/main/Icon.png
+https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/refs/heads/main/Icon.png
 ```
 
 ### Prerequisites
