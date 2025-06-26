@@ -14,6 +14,7 @@
   - [Supported features:](#supported-features)
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
+    - [HelloID Icon URL](#helloid-icon-url)
     - [Prerequisites](#prerequisites)
     - [Connection settings](#connection-settings)
     - [Correlation configuration](#correlation-configuration)
@@ -48,6 +49,13 @@ For this connector we have the option to correlate to and/or update Exchange Onl
 If you want to create Exchange Online (Office 365) users and/or mailboxes, please use the built-in Microsoft (Entra ID) Active Directory target system. Or setup Business Rules to provision an Office 365 license group, Microsoft will automatically provision a mailbox for this user.
 
 ## Getting started
+
+### HelloID Icon URL
+URL of the icon used for the HelloID Provisioning target system.
+
+```
+https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/refs/heads/main/Icon.png
+```
 
 ### Prerequisites
 
