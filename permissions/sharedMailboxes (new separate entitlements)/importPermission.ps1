@@ -68,7 +68,6 @@ try {
     $actionMessage = "importing module [ExchangeOnlineManagement]"
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        # Cmdlet      = 'Get-User,Get-Mailbox,Get-MailboxPermission,Get-RecipientPermission'
         Cmdlet      = 'Get-User,Get-Mailbox,Get-EXOMailboxPermission,Get-EXORecipientPermission'
         Verbose     = $false
         ErrorAction = "Stop"
