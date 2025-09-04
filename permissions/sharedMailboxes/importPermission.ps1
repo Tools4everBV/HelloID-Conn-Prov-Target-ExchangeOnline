@@ -68,7 +68,7 @@ try {
     $actionMessage = "importing module [ExchangeOnlineManagement]"
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = 'Get-User,Get-Mailbox,Get-MailboxPermission,Get-RecipientPermission'
+        Cmdlet      = 'Get-User,Get-Mailbox,Get-EXOMailboxPermission,Get-EXORecipientPermission'
         Verbose     = $false
         ErrorAction = "Stop"
     }
@@ -136,8 +136,7 @@ try {
             ErrorAction = 'Stop'
         }
         $fullAccessUsers = @()
-        $fullAccessList = Get-MailboxPermission @getFullAccessPermissionsParams
-        $fullAccessPermissions = $fullAccessList | Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } | Select-Object User
+        $fullAccessPermissions = Get-EXOMailboxPermission @getFullAccessPermissionsParams | Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } | Select-Object User
         foreach ($record in $fullAccessPermissions) {
             $fullAccessUser = $userMailboxesUpnGrouped[$record.User].guid
             if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }

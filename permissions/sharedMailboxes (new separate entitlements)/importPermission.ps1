@@ -68,7 +68,8 @@ try {
     $actionMessage = "importing module [ExchangeOnlineManagement]"
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = 'Get-User,Get-Mailbox,Get-MailboxPermission,Get-RecipientPermission'
+        # Cmdlet      = 'Get-User,Get-Mailbox,Get-MailboxPermission,Get-RecipientPermission'
+        Cmdlet      = 'Get-User,Get-Mailbox,Get-EXOMailboxPermission,Get-EXORecipientPermission'
         Verbose     = $false
         ErrorAction = "Stop"
     }
@@ -132,15 +133,14 @@ try {
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-recipientpermission?view=exchange-ps
     $actionMessage = "getting all recipient permissions from Microsoft Exchange Online"
     $getAllRecipientPermissionsParams = @{
-        ResultSize  = 'Unlimited'
-        ErrorAction = 'Stop'
+        ResultSize   = 'Unlimited'
+        AccessRights = 'SendAs'
+        ErrorAction  = 'Stop'
     }
-    $allRecipientPermissions = Get-RecipientPermission @getAllRecipientPermissionsParams
-    $allSendAsPermissions = $allRecipientPermissions | Where-Object { $_.AccessRights -eq 'SendAs' -and $_.AccessControlType -eq 'Allow' } | Select-Object Identity, Trustee
+    $allSendAsPermissions = Get-EXORecipientPermission @getAllRecipientPermissionsParams | Where-Object { $_.AccessControlType -eq 'Allow' } | Select-Object Identity, Trustee
     $allSendAsPermissionsGrouped = $allSendAsPermissions | Group-Object -Property 'Identity' -AsHashTable -AsString
     Write-Information "Successfully queried [$($allSendAsPermissions.count)] recipient permissions"
     # Cleanup for memory
-    $allRecipientPermissions = $null
     $allSendAsPermissions = $null
 
     foreach ($sharedMailbox in $sharedMailboxes) {
@@ -151,8 +151,7 @@ try {
             ErrorAction = 'Stop'
         }
         $fullAccessUsers = @()
-        $fullAccessList = Get-MailboxPermission @getFullAccessPermissionsParams
-        $fullAccessPermissions = $fullAccessList | Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } | Select-Object User
+        $fullAccessPermissions = Get-EXOMailboxPermission @getFullAccessPermissionsParams | Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } | Select-Object User
         foreach ($record in $fullAccessPermissions) {
             $fullAccessUser = $userMailboxesUpnGrouped[$record.User].guid
             if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }
