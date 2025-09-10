@@ -136,11 +136,27 @@ try {
         $distributionGroupMembers = @()
         $distributionGroupMembers = ($userMailboxGroupMembers).guid
         
+        # Make sure the displayname has a value of max 100 char
+        if (-not([string]::IsNullOrEmpty($distributionGroup.DisplayName))) {
+            $displayname = $($distributionGroup.DisplayName).substring(0, [System.Math]::Min(100, $($distributionGroup.DisplayName).Length))
+        }
+        else {
+            $displayname = $distributionGroup.guid
+        }
+
         if ($distributionGroup.RecipientTypeDetails -eq 'MailUniversalSecurityGroup') {
             $displayname = "Mail-enabled Security Group - $($distributionGroup.DisplayName)"
         }
         else {
             $displayname = "Distribution Group - $($distributionGroup.DisplayName)"
+            
+        }
+        $displayname = $($displayname).substring(0, [System.Math]::Min(100, $($displayname).Length))
+
+        $description = $distributionGroup.Description[0]
+        # Make sure the description has a value of max 100 char
+        if (-not([string]::IsNullOrEmpty($description))) {
+            $description = $($description).substring(0, [System.Math]::Min(100, $($description).Length))
         }
 
         $numberOfAccounts = $distributionGroupMembers.Count
@@ -148,7 +164,7 @@ try {
             PermissionReference = @{
                 Id = $distributionGroup.Guid
             }       
-            Description         = $distributionGroup.Description[0]
+            Description         = $description
             DisplayName         = $displayname
         }
         # Batch permissions based on the amount of account references, 
