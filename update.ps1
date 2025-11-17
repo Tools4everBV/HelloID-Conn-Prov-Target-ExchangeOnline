@@ -1,7 +1,8 @@
 #################################################
 # HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Update
 # Updates custom attributes
-# Updates Emailadresses (proxyaddresses) preserving existing lines, but delete any lines beginning with SPO:SPO_.
+# Updates Emailadresses (proxyaddresses) preserving existing lines.
+# Optionally removes any SPO:SPO_ addresses from the emailAddresses list. This will be regenerated upon next SharePoint Online license assignment.
 # PowerShell V2
 #################################################
 
@@ -177,8 +178,8 @@ try {
                 throw 'Multiple primary SMTP addresses found in the mapped properties. Please ensure only one is set.'
             }
             
-              # Verwijder SPO adressen uit de gemergde lijst
-             $mergedEmailAddresses = $mergedEmailAddresses | Where-Object { $_ -notmatch '^SPO:SPO_' }
+              # Optionaly remove any SPO:SPO_ addresses from the merged list
+             #$mergedEmailAddresses = $mergedEmailAddresses | Where-Object { $_ -notmatch '^SPO:SPO_' }
     
             
             # Ensure the primary SMTP is set correctly in the merged list
