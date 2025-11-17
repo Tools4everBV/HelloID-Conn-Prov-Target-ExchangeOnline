@@ -161,7 +161,7 @@ try {
     
     $outputContext.PreviousData = $correlatedAccount | Select-Object $outputContext.Data.PsObject.Properties.Name
 
-    #Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
+    Write-Information "Queried account where [Identity] = [$($actionContext.References.Account)]. Result: $($correlatedAccount  | ConvertTo-Json)"
     #endregion Get account
 
     #region Calulate action
@@ -178,9 +178,8 @@ try {
                 throw 'Multiple primary SMTP addresses found in the mapped properties. Please ensure only one is set.'
             }
             
-              # Optionaly remove any SPO:SPO_ addresses from the merged list
-             #$mergedEmailAddresses = $mergedEmailAddresses | Where-Object { $_ -notmatch '^SPO:SPO_' }
-    
+            # Optionaly remove any SPO:SPO_ addresses from the merged list
+            #$mergedEmailAddresses = $mergedEmailAddresses | Where-Object { $_ -notmatch '^SPO:SPO_' }
             
             # Ensure the primary SMTP is set correctly in the merged list
             $mergedEmailAddresses = $mergedEmailAddresses | ForEach-Object {
@@ -227,8 +226,6 @@ try {
                 $accountChangedPropertiesObject.NewValues.$($accountNewProperty.Name) = $accountNewProperty.Value
             }
 
-            #Write-Information "Changed properties: $($accountChangedPropertiesObject | ConvertTo-Json)"
-
             $actionAccount = "Update"
         }
         else {
@@ -245,6 +242,8 @@ try {
         "Update" {
             $actionMessage = "updating account"
 
+            Write-Information "Account property(s) required to update: $($propertiesChanged.Name -join ', ')"
+
             $setMicrosoftExchangeOnlineAccountSplatParams = @{
                 Identity    = $actionContext.References.Account
                 Verbose     = $false
@@ -254,21 +253,16 @@ try {
             foreach ($accountNewProperty in $accountNewProperties) {
                 $setMicrosoftExchangeOnlineAccountSplatParams["$($accountNewProperty.Name)"] = $accountNewProperty.Value
             }
-
-            #Write-Information "SplatParams: $($setMicrosoftExchangeOnlineAccountSplatParams | ConvertTo-Json)"
-
             if (-Not($actionContext.DryRun -eq $true)) {       
                 $null = Set-Mailbox  @setMicrosoftExchangeOnlineAccountSplatParams
 
-                #Write-Information "Account with id [$($actionContext.References.Account)] successfully updated Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
-
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
-                        Message = "Account with id [$($actionContext.References.Account)] successfully updated." #Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
+                        Message = "Account with id [$($actionContext.References.Account)] successfully updated. Account property(s) updated: [$($propertiesChanged.name -join ',')]" 
                         IsError = $false
                     })
             }
             else {
-                Write-Warning "DryRun: Would update account with id [$($actionContext.References.Account)]. Old values: $($accountChangedPropertiesObject.oldValues | ConvertTo-Json). New values: $($accountChangedPropertiesObject.newValues | ConvertTo-Json)"
+                Write-Warning "DryRun: Would update account with id [$($actionContext.References.Account)]. Account property(s) to update: [$($propertiesChanged.name -join ',')]"
             }
 
             break
@@ -277,8 +271,8 @@ try {
         "NoChanges" {
             $actionMessage = "no changes to account"
 
-            $outputContext.Data = $actionContext.Data
-            $outputContext.PreviousData = $actionContext.Data
+            $outputContext.Data = $correlatedAccount | Select-Object $outputContext.Data.PsObject.Properties.Name
+            $outputContext.PreviousData = $correlatedAccount | Select-Object $outputContext.Data.PsObject.Properties.Name
 
             Write-Information "Account with id [$($actionContext.References.Account)] successfully checked. No changes required"
 
