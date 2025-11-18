@@ -18,7 +18,7 @@
       ]
     },
     {
-      "Name": "userPrincipalName",
+      "Name": "UserPrincipalName",
       "Description": "[Required] for correlation",
       "Type": "Text",
       "MappingActions": [
