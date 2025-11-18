@@ -144,6 +144,8 @@ The field mapping can be imported by using the _fieldMapping.json_ file.
 
 In some cases, Exchange Online takes more than 70 seconds to return an error. For example when using the `Set-MailboxRegionalConfiguration` with an invalid date format. For this reason, if you get the 30 seconds timeout then we recommend testing locally on the agent server.
 
+Added enhanced functionality to update **EmailAddresses (proxy addresses)**. The script now ensures that existing proxy addresses are preserved, and new ones are added with the correct primary (SMTP:) and secondary (smtp:) casing.
+
 ## Development resources
 
 ### API endpoints
