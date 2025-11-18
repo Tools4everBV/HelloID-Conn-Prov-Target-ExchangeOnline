@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.0.2] - 18-11-2025
+
+### Added
+- GitHub workflow for automated release creation with changelog integration
+
 ## [3.0.1] - 18-11-2025
 
 ### Added
