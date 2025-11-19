@@ -106,29 +106,16 @@ function Resolve-ExchangeOnlineError {
     }
 }
 
-function Resolve-HTTPError {
+function Get-MSEntraCertificate {
     [CmdletBinding()]
-    param (
-        [Parameter(Mandatory,
-            ValueFromPipeline
-        )]
-        [object]$ErrorObject
-    )
-    process {
-        $httpErrorObj = [PSCustomObject]@{
-            FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
-            MyCommand             = $ErrorObject.InvocationInfo.MyCommand
-            RequestUri            = $ErrorObject.TargetObject.RequestUri
-            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
-            ErrorMessage          = ''
-        }
-        if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.Powershell.Commands.HttpResponseException') {
-            $httpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
-        }
-        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
-            $httpErrorObj.ErrorMessage = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
-        }
-        Write-Output $httpErrorObj
+    param()
+    try {
+        $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        Write-Output $certificate
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
     }
 }
 #endregion functions
@@ -151,33 +138,12 @@ try {
     $null = Import-Module @importModuleSplatParams
 
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Create access token
+    #endregion Import module
 
-    #region Create access token
-    $actionMessage = "creating access token"
-
-    $createAccessTokenBody = @{
-        grant_type    = "client_credentials"
-        client_id     = $actionContext.Configuration.AppId
-        client_secret = $actionContext.Configuration.AppSecret
-        resource      = "https://outlook.office365.com"
-    }
-
-    $createAccessTokenSplatParams = @{
-        Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
-        Headers         = $headers
-        Method          = "POST"
-        ContentType     = "application/x-www-form-urlencoded"
-        UseBasicParsing = $true
-        Body            = $createAccessTokenBody
-        Verbose         = $false
-        ErrorAction     = "Stop"
-    }
-
-    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
-
-    Write-Information "Created access token"
-    #endregion Create access token
+    #region Retrieving certificate
+    $actionMessage = "retrieving certificate"
+    $certificate = Get-MSEntraCertificate
+    #endregion Retrieving certificate
 
     #region Connect to Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
@@ -186,7 +152,7 @@ try {
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $createAccessTokenResonse.access_token
+        Certificate           = $certificate
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false
@@ -197,7 +163,7 @@ try {
     }
 
     $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-    
+        
     Write-Information "Connected to Microsoft Exchange Online"
     #endregion Connect to Microsoft Exchange Online
 

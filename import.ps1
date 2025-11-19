@@ -61,6 +61,19 @@ function Resolve-ExchangeOnlineError {
         return $httpErrorObj
     }
 }
+
+function Get-MSEntraCertificate {
+    [CmdletBinding()]
+    param()
+    try {
+        $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        Write-Output $certificate
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion functions
 
 try {
@@ -93,32 +106,16 @@ try {
     $null = Import-Module @importModuleSplatParams
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
 
-    $actionMessage = "creating access token"
-    $createAccessTokenBody = @{
-        grant_type    = "client_credentials"
-        client_id     = $actionContext.Configuration.AppId
-        client_secret = $actionContext.Configuration.AppSecret
-        resource      = "https://outlook.office365.com"
-    }
-    $createAccessTokenSplatParams = @{
-        Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
-        Headers         = $headers
-        Method          = "POST"
-        ContentType     = "application/x-www-form-urlencoded"
-        UseBasicParsing = $true
-        Body            = $createAccessTokenBody
-        Verbose         = $false
-        ErrorAction     = "Stop"
-    }
-    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
-    Write-Information "Created access token."
+    $actionMessage = "retrieving certificate"
+    $certificate = Get-MSEntraCertificate
 
+    #region Connect to Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
     $actionMessage = "connecting to Microsoft Exchange Online"
     $createExchangeSessionSplatParams = @{
         Organization          = $actionContext.Configuration.Organization
         AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $createAccessTokenResonse.access_token
+        Certificate           = $certificate
         CommandName           = $commands
         ShowBanner            = $false
         ShowProgress          = $false

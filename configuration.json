@@ -33,13 +33,25 @@
     }
   },
   {
-    "key": "AppSecret",
+    "key": "AppCertificateBase64String",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {
-      "label": "App Registration Client Secret",
+      "label": "App Registration Certificate Base 64 String",
       "type": "password",
-      "placeholder": "1234567-2538-4922-80e2-b890abcde",
+      "placeholder": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg==",
+      "description": "",
+      "required": true
+    }
+  },
+  {
+    "key": "AppCertificatePassword",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "App Registration Certificate Password",
+      "type": "password",
+      "placeholder": "P@ssw0rd!",
       "description": "",
       "required": true
     }
