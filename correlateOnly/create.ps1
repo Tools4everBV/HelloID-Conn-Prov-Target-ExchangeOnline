@@ -102,7 +102,7 @@ try {
     $correlationValue = $actionContext.CorrelationConfiguration.personFieldValue
 
     # Define properties to query
-    $accountPropertiesToQuery = @("guid") + $outputContext.PsObject.Properties.Name | Select-Object -Unique
+    $accountPropertiesToQuery = @("guid") + $outputContext.Data.PsObject.Properties.Name | Select-Object -Unique
     #endRegion account
 
     #region Verify correlation configuration and properties
