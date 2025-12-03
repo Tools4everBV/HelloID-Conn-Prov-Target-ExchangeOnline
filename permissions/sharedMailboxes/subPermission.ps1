@@ -106,6 +106,19 @@ function Resolve-ExchangeOnlineError {
         Write-Output $httpErrorObj
     }
 }
+
+function Get-MSEntraCertificate {
+    [CmdletBinding()]
+    param()
+    try {
+        $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        Write-Output $certificate
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion functions
 
 #region Get Access Token
@@ -131,55 +144,89 @@ try {
     $null = Import-Module @importModuleSplatParams
 
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Create access token
+    #endregion Import module
 
-    #region Create access token
-    $actionMessage = "creating access token"
+    if ($actionContext.Configuration.UseCertificate -eq $true) {
+        Write-Information "Connecting to Exchange Online with certificate"
 
-    $createAccessTokenBody = @{
-        grant_type    = "client_credentials"
-        client_id     = $actionContext.Configuration.AppId
-        client_secret = $actionContext.Configuration.AppSecret
-        resource      = "https://outlook.office365.com"
+        #region Retrieving certificate
+        $actionMessage = "retrieving certificate"
+        $certificate = Get-MSEntraCertificate
+        #endregion Retrieving certificate
+
+        #region Connect to Microsoft Exchange Online
+        # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+        $actionMessage = "connecting to Microsoft Exchange Online"
+
+        $createExchangeSessionSplatParams = @{
+            Organization          = $actionContext.Configuration.Organization
+            AppID                 = $actionContext.Configuration.AppId
+            Certificate           = $certificate
+            CommandName           = $commands
+            ShowBanner            = $false
+            ShowProgress          = $false
+            TrackPerformance      = $false
+            SkipLoadingCmdletHelp = $true
+            SkipLoadingFormatData = $true
+            ErrorAction           = "Stop"
+        }
+
+        $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+        
+        Write-Information "Connected to Microsoft Exchange Online"
+        #endregion Connect to Microsoft Exchange Online
     }
+    else {
+        Write-Information "Connecting to Exchange Online with secret"
+        
+        #region Create access token
+        $actionMessage = "creating access token"
+    
+        $createAccessTokenBody = @{
+            grant_type    = "client_credentials"
+            client_id     = $actionContext.Configuration.AppId
+            client_secret = $actionContext.Configuration.AppSecret
+            resource      = "https://outlook.office365.com"
+        }
 
-    $createAccessTokenSplatParams = @{
-        Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
-        Headers         = $headers
-        Method          = "POST"
-        ContentType     = "application/x-www-form-urlencoded"
-        UseBasicParsing = $true
-        Body            = $createAccessTokenBody
-        Verbose         = $false
-        ErrorAction     = "Stop"
+        $createAccessTokenSplatParams = @{
+            Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
+            Headers         = $headers
+            Method          = "POST"
+            ContentType     = "application/x-www-form-urlencoded"
+            UseBasicParsing = $true
+            Body            = $createAccessTokenBody
+            Verbose         = $false
+            ErrorAction     = "Stop"
+        }
+
+        $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
+
+        Write-Information "Created access token."
+        #endregion Create access token
+
+        #region Connect to Microsoft Exchange Online
+        # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+        $actionMessage = "connecting to Microsoft Exchange Online"
+
+        $createExchangeSessionSplatParams = @{
+            Organization          = $actionContext.Configuration.Organization
+            AppID                 = $actionContext.Configuration.AppId
+            AccessToken           = $createAccessTokenResonse.access_token
+            CommandName           = $commands
+            ShowBanner            = $false
+            ShowProgress          = $false
+            TrackPerformance      = $false
+            SkipLoadingCmdletHelp = $true
+            SkipLoadingFormatData = $true
+            ErrorAction           = "Stop"
+        }
+
+        $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+        
+        Write-Information "Connected to Microsoft Exchange Online"
+        #endregion Connect to Microsoft Exchange Online
     }
-
-    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
-
-    Write-Information "Created access token"
-    #endregion Create access token
-
-    #region Connect to Microsoft Exchange Online
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to Microsoft Exchange Online"
-
-    $createExchangeSessionSplatParams = @{
-        Organization          = $actionContext.Configuration.Organization
-        AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $createAccessTokenResonse.access_token
-        CommandName           = $commands
-        ShowBanner            = $false
-        ShowProgress          = $false
-        TrackPerformance      = $false
-        SkipLoadingCmdletHelp = $true
-        SkipLoadingFormatData = $true
-        ErrorAction           = "Stop"
-    }
-
-    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-  
-    Write-Information "Connected to Microsoft Exchange Online"
-    #endregion Connect to Microsoft Exchange Online
 
     #region Define desired permissions
     $actionMessage = "calculating desired permission"
