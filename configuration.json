@@ -33,6 +33,28 @@
     }
   },
   {
+    "key": "AppSecret",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "App Registration Client Secret",
+      "type": "password",
+      "placeholder": "1234567-2538-4922-80e2-b890abcde",
+      "description": "",
+      "required": false
+    }
+  },
+  {
+    "key": "UseCertificate",
+    "type": "checkbox",
+    "defaultValue": false,
+    "templateOptions": {
+      "label": "Use Certificate for Authentication",
+      "description": "When toggled, the connection will use a certificate for authentication instead of a client secret.",
+      "required": false
+    }
+  },
+  {
     "key": "AppCertificateBase64String",
     "type": "input",
     "defaultValue": "",
@@ -41,7 +63,7 @@
       "type": "password",
       "placeholder": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg==",
       "description": "",
-      "required": true
+      "required": false
     }
   },
   {
@@ -53,7 +75,7 @@
       "type": "password",
       "placeholder": "P@ssw0rd!",
       "description": "",
-      "required": true
+      "required": false
     }
   }
 ]
