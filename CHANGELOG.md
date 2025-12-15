@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.1.0] - 15-12-2025
+- Added certificate support
+- Enhanced README [#24](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/issues/24)
+- Fixed removed user or mailbox check [#22](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/issues/22)
+
 ## [3.0.2] - 18-11-2025
 
 ### Added
