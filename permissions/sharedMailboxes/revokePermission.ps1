@@ -235,21 +235,36 @@ try {
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
         
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    # Check if user/account no longer exists
+                    if (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Account)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Account)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    # Check if mailbox/permission object no longer exists
+                    elseif (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Permission.id)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Permission.id)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
+                        Write-Warning $warningMessage
                         throw $auditMessage
                     }
                 }
@@ -298,21 +313,36 @@ try {
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
         
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    # Check if user/account no longer exists
+                    if (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Account)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Account)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    # Check if mailbox/permission object no longer exists
+                    elseif (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Permission.id)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Permission.id)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
+                        Write-Warning $warningMessage
                         throw $auditMessage
                     }
                 }
@@ -360,21 +390,36 @@ try {
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
         
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    # Check if user/account no longer exists
+                    if (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Account)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Account)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    # Check if mailbox/permission object no longer exists
+                    elseif (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Permission.id)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Permission.id)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
+                        Write-Warning $warningMessage
                         throw $auditMessage
                     }
                 }
