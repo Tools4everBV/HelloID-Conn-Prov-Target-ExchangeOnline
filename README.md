@@ -82,7 +82,12 @@ Once you have completed the Microsoft setup and followed their best practices, c
    - **Certificate:**
        - Upload the public key file (.cer) in Entra ID.
 4. **Assign Entra ID roles to the application**:
-   - The **Exchange Administrator** role should provide the required permissions 
+   - The **Exchange Administrator** role is required for some operations.  
+   - For most mailbox and group management tasks, the **Exchange Recipient Administrator** role is sufficient.
+   - Examples:  
+     - **Manage shared mailboxes** → Exchange Recipient Administrator  
+     - **Manage distribution lists** → Exchange Recipient Administrator  
+     - **Manage mail-enabled security groups** → Exchange Administrator (required only if using `BypassSecurityGroupManagerCheck` with `Add-DistributionGroupMember`) 
 
 #### Convert .pfx to base64 string
 HelloID requires a base64 string to import the certificate. With the example below, it is possible to create a base64 string
