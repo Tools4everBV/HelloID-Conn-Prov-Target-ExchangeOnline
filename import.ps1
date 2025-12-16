@@ -7,6 +7,12 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Define PowerShell commands to import
+$commands = @(
+    "Get-User",
+    "Get-EXOMailbox"
+)
+
 #region functions
 function Resolve-ExchangeOnlineError {
     [CmdletBinding()]
