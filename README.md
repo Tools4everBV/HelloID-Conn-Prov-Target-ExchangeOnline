@@ -14,8 +14,10 @@
   - [Supported features:](#supported-features)
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
-    - [HelloID Icon URL](#helloid-icon-url)
-    - [Prerequisites](#prerequisites)
+    - [Requirements](#requirements)
+      - [App Registration \& Certificate Setup](#app-registration--certificate-setup)
+      - [HelloID-specific configuration](#helloid-specific-configuration)
+      - [Convert .pfx to base64 string](#convert-pfx-to-base64-string)
     - [Connection settings](#connection-settings)
     - [Correlation configuration](#correlation-configuration)
     - [Available lifecycle actions](#available-lifecycle-actions)
@@ -50,14 +52,18 @@ If you want to create Exchange Online (Office 365) users and/or mailboxes, pleas
 
 ## Getting started
 
-### HelloID Icon URL
-URL of the icon used for the HelloID Provisioning target system.
+### Requirements
 
-```
-https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/refs/heads/main/Icon.png
-```
+#### App Registration & Certificate Setup
 
-### Prerequisites
+Before implementing this connector, make sure to configure a Microsoft Entra ID, an App Registration. During the setup process, you’ll create a new App Registration in the Entra portal, assign the necessary API permissions (such as user and group read/write), and generate and assign a certificate.
+
+Follow the official Microsoft documentation for creating an App Registration and setting up certificate-based authentication:
+- [App-only authentication with certificate (Exchange Online)](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#set-up-app-only-authentication)
+
+#### HelloID-specific configuration
+
+Once you have completed the Microsoft setup and followed their best practices, configure the following HelloID-specific requirements.
 
 1. **HelloID Environment**:
    - Set up your _HelloID_ environment.
@@ -71,22 +77,44 @@ https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-Exchange
    - Add API permissions for your app:
      - **Application permissions**:
        - From the **Request API Permissions** screen click `Office 365 Exchange Online`.
-          > _The Office 365 Exchange Online might not be a selectable API. In this case, select "APIs my organization uses" and search here for "Office 365 Exchange Online"__
+          > _The Office 365 Exchange Online might not be a selectable API. In this case, select "APIs my organization uses" and search here for "Office 365 Exchange Online"_
        - `Exchange.ManageAsApp`: Manage Exchange As Application.
-   - Create access credentials for your app:
-     - Create a **client secret** for your app.
+   - **Certificate:**
+       - Upload the public key file (.cer) in Entra ID.
 4. **Assign Entra ID roles to the application**:
-   - The **Exchange Administrator** role should provide the required permissions 
+   - The **Exchange Administrator** role is required for some operations.  
+   - For most mailbox and group management tasks, the **Exchange Recipient Administrator** role is sufficient.
+   - Examples:  
+     - **Manage shared mailboxes** → Exchange Recipient Administrator  
+     - **Manage distribution lists** → Exchange Recipient Administrator  
+     - **Manage mail-enabled security groups** → Exchange Administrator (required only if using `BypassSecurityGroupManagerCheck` with `Add-DistributionGroupMember`)  
+
+#### Convert .pfx to base64 string
+HelloID requires a base64 string to import the certificate. With the example below, it is possible to create a base64 string
+
+```Powershell
+$filePath = 'C:\Cert'
+$pfxCertName = 'Cert.pfx'
+$pfxPath = "$filePath\$pfxCertName"
+
+$fileContentBytes = [System.IO.File]::ReadAllBytes("$pfxPath")
+[System.Convert]::ToBase64String($fileContentBytes) | Set-Content "$filePath\HelloID_Cert_Base64.txt"
+```
+
 
 ### Connection settings
 The following settings are required to connect.
 
-| Setting               | Description                                                                                | Mandatory |
-| --------------------- | ------------------------------------------------------------------------------------------ | --------- |
-| Entra ID Organization | The name of the organization to connect to and where the Entra ID App Registration exists. | Yes       |
-| Entra ID Tenant ID    | Id of the Entra ID tenant                                                                  | Yes       |
-| Entra ID App Id       | The Application (client) ID of the Entra ID App Registration with Exchange Permissions     | Yes       |
-| Entra ID App Secret   | Secret of the Entra ID App Registration with Exchange Permissions                          | Yes       |
+| Setting                                | Description                                                                                    | Mandatory                         |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------- |
+| Entra ID Organization                  | The name of the organization to connect to and where the Entra ID App Registration exists.     | Yes                               |
+| Entra ID Tenant ID                     | Id of the Entra ID tenant                                                                      | Yes                               |
+| Entra ID App Id                        | The Application (client) ID of the Entra ID App Registration with Exchange Permissions         | Yes                               |
+| Entra ID App Secret                    | Secret of the Entra ID App Registration with Exchange Permissions `certificate is recommended` | Yes (only when using app secret)  |
+| Use Certificate                        | Toggle to activate the authentication with a certificate `recommended`                         |                                   |
+| Entra ID App Certificate Base64 String | The certificate converted to a base64 string `recommended`                                     | Yes (only when using certificate) |
+| Entra ID App Certificate Password      | The certificate password `recommended`                                                         | Yes (only when using certificate) |
+
 
 > [!IMPORTANT]
 > Please note: You must use the primary .onmicrosoft.com domain of the organization. Using anything else may lead to inconsistent results.

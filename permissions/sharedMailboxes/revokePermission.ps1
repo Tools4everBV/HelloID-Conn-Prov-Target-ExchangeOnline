@@ -67,6 +67,19 @@ function Resolve-ExchangeOnlineError {
         Write-Output $httpErrorObj
     }
 }
+
+function Get-MSEntraCertificate {
+    [CmdletBinding()]
+    param()
+    try {
+        $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        Write-Output $certificate
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion functions
 
 try {
@@ -91,55 +104,89 @@ try {
     $null = Import-Module @importModuleSplatParams
 
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Create access token
+    #endregion Import module
 
-    #region Create access token
-    $actionMessage = "creating access token"
+    if ($actionContext.Configuration.UseCertificate -eq $true) {
+        Write-Information "Connecting to Exchange Online with certificate"
 
-    $createAccessTokenBody = @{
-        grant_type    = "client_credentials"
-        client_id     = $actionContext.Configuration.AppId
-        client_secret = $actionContext.Configuration.AppSecret
-        resource      = "https://outlook.office365.com"
+        #region Retrieving certificate
+        $actionMessage = "retrieving certificate"
+        $certificate = Get-MSEntraCertificate
+        #endregion Retrieving certificate
+
+        #region Connect to Microsoft Exchange Online
+        # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+        $actionMessage = "connecting to Microsoft Exchange Online"
+
+        $createExchangeSessionSplatParams = @{
+            Organization          = $actionContext.Configuration.Organization
+            AppID                 = $actionContext.Configuration.AppId
+            Certificate           = $certificate
+            CommandName           = $commands
+            ShowBanner            = $false
+            ShowProgress          = $false
+            TrackPerformance      = $false
+            SkipLoadingCmdletHelp = $true
+            SkipLoadingFormatData = $true
+            ErrorAction           = "Stop"
+        }
+
+        $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+        
+        Write-Information "Connected to Microsoft Exchange Online"
+        #endregion Connect to Microsoft Exchange Online
     }
-
-    $createAccessTokenSplatParams = @{
-        Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
-        Headers         = $headers
-        Method          = "POST"
-        ContentType     = "application/x-www-form-urlencoded"
-        UseBasicParsing = $true
-        Body            = $createAccessTokenBody
-        Verbose         = $false
-        ErrorAction     = "Stop"
-    }
-
-    $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
-
-    Write-Information "Created access token"
-    #endregion Create access token
-
-    #region Connect to Microsoft Exchange Online
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-    $actionMessage = "connecting to Microsoft Exchange Online"
-
-    $createExchangeSessionSplatParams = @{
-        Organization          = $actionContext.Configuration.Organization
-        AppID                 = $actionContext.Configuration.AppId
-        AccessToken           = $createAccessTokenResonse.access_token
-        CommandName           = $commands
-        ShowBanner            = $false
-        ShowProgress          = $false
-        TrackPerformance      = $false
-        SkipLoadingCmdletHelp = $true
-        SkipLoadingFormatData = $true
-        ErrorAction           = "Stop"
-    }
-
-    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    else {
+        Write-Information "Connecting to Exchange Online with secret"
+        
+        #region Create access token
+        $actionMessage = "creating access token"
     
-    Write-Information "Connected to Microsoft Exchange Online"
-    #endregion Connect to Microsoft Exchange Online
+        $createAccessTokenBody = @{
+            grant_type    = "client_credentials"
+            client_id     = $actionContext.Configuration.AppId
+            client_secret = $actionContext.Configuration.AppSecret
+            resource      = "https://outlook.office365.com"
+        }
+
+        $createAccessTokenSplatParams = @{
+            Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
+            Headers         = $headers
+            Method          = "POST"
+            ContentType     = "application/x-www-form-urlencoded"
+            UseBasicParsing = $true
+            Body            = $createAccessTokenBody
+            Verbose         = $false
+            ErrorAction     = "Stop"
+        }
+
+        $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
+
+        Write-Information "Created access token."
+        #endregion Create access token
+
+        #region Connect to Microsoft Exchange Online
+        # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
+        $actionMessage = "connecting to Microsoft Exchange Online"
+
+        $createExchangeSessionSplatParams = @{
+            Organization          = $actionContext.Configuration.Organization
+            AppID                 = $actionContext.Configuration.AppId
+            AccessToken           = $createAccessTokenResonse.access_token
+            CommandName           = $commands
+            ShowBanner            = $false
+            ShowProgress          = $false
+            TrackPerformance      = $false
+            SkipLoadingCmdletHelp = $true
+            SkipLoadingFormatData = $true
+            ErrorAction           = "Stop"
+        }
+
+        $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+        
+        Write-Information "Connected to Microsoft Exchange Online"
+        #endregion Connect to Microsoft Exchange Online
+    }
 
     #region Revoke Mailbox permission
     foreach ($accessRight in $actionContext.References.Permission.AccessRights) {
@@ -188,21 +235,36 @@ try {
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
         
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    # Check if user/account no longer exists
+                    if (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Account)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Account)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    # Check if mailbox/permission object no longer exists
+                    elseif (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Permission.id)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Permission.id)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
+                        Write-Warning $warningMessage
                         throw $auditMessage
                     }
                 }
@@ -251,21 +313,36 @@ try {
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
         
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    # Check if user/account no longer exists
+                    if (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Account)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Account)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    # Check if mailbox/permission object no longer exists
+                    elseif (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Permission.id)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Permission.id)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
+                        Write-Warning $warningMessage
                         throw $auditMessage
                     }
                 }
@@ -313,21 +390,36 @@ try {
                         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
                     }
         
-                    if ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Account)*") {
+                    # Check if user/account no longer exists
+                    if (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Account)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Account)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: User no longer exists."
                                 IsError = $false
                             })
                     }
-                    elseif ($auditMessage -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -and $warningMessage -like "*$($actionContext.References.Permission.id)*") {
+                    # Check if mailbox/permission object no longer exists
+                    elseif (
+                        ($ex.Exception.Message -like "*Microsoft.Exchange.Configuration.Tasks.ManagementObjectNotFoundException*" -or 
+                        $ex.Exception.Message -like "*wasn't found*" -or 
+                        $ex.Exception.Message -like "*couldn't be found*" -or 
+                        $ex.Exception.Message -like "*couldn't find object*") -and 
+                        ($warningMessage -like "*$($actionContext.References.Permission.id)*" -or 
+                        $ex.Exception.Message -like "*$($actionContext.References.Permission.id)*")
+                    ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
-                                # Action  = "" # Optional
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
                                 IsError = $false
                             })
                     }
                     else {
+                        Write-Warning $warningMessage
                         throw $auditMessage
                     }
                 }
