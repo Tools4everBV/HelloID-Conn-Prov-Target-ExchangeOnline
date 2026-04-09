@@ -42,7 +42,7 @@
 | **Permissions**                     | ✅         | Retrieve, Grant, Revoke                 | Groups, shared mailboxes, folder permissions, litigation hold, regional configuration                                                          |
 | **Resources**                       | ✅         | -                                       | For groups and shared mailboxes                                                                                                                |
 | **Entitlement Import: Accounts**    | ✅         | -                                       |                                                                                                                                                |
-| **Entitlement Import: Permissions** | ✅         | -                                       | ⚠️Warning the new separate entitlements scripts for shared mailboxes are not backwards compatible!⚠️                                             |
+| **Entitlement Import: Permissions** | ✅         | -                                       | Only for the new shared mailboxes scripts. ⚠️Warning this new shared mailbox scripts are not backwards compatible!⚠️                             |
 
 ## Introduction
 For this connector we have the option to correlate to and/or update Exchange Online (Office 365) users and/or mailboxes and provision permission(s) to a group and/or shared mailbox.
@@ -87,7 +87,7 @@ Once you have completed the Microsoft setup and followed their best practices, c
    - Examples:  
      - **Manage shared mailboxes** → Exchange Recipient Administrator  
      - **Manage distribution lists** → Exchange Recipient Administrator  
-     - **Manage mail-enabled security groups** → Exchange Administrator (required only if using `BypassSecurityGroupManagerCheck` with `Add-DistributionGroupMember`) 
+     - **Manage mail-enabled security groups** → Exchange Administrator (required only if using `BypassSecurityGroupManagerCheck` with `Add-DistributionGroupMember`)  
 
 #### Convert .pfx to base64 string
 HelloID requires a base64 string to import the certificate. With the example below, it is possible to create a base64 string
@@ -172,6 +172,8 @@ The field mapping can be imported by using the _fieldMapping.json_ file.
 
 In some cases, Exchange Online takes more than 70 seconds to return an error. For example when using the `Set-MailboxRegionalConfiguration` with an invalid date format. For this reason, if you get the 30 seconds timeout then we recommend testing locally on the agent server.
 
+Added enhanced functionality to update **EmailAddresses (proxy addresses)**. The script now ensures that existing proxy addresses are preserved, and new ones are added with the correct primary (SMTP:) and secondary (smtp:) casing.
+
 ## Development resources
 
 ### API endpoints
@@ -198,7 +200,6 @@ The following endpoints are used by the connector
 | Set-MailboxRegionalConfiguration  | Set mailbox regional configuration            |
 | Set-MailboxAutoReplyConfiguration | Set mailbox auto reply configuration          |
 | Get-MailboxAutoReplyConfiguration | Get mailbox auto reply configuration          |
-
 
 ### API documentation
 

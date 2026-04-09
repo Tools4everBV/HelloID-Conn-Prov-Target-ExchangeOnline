@@ -92,8 +92,8 @@ function Convert-StringToBoolean($obj) {
         }
     }
     return $obj
-}
 
+}
 function Get-MSEntraCertificate {
     [CmdletBinding()]
     param()

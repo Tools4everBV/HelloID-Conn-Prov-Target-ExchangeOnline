@@ -27,7 +27,7 @@
             "Create"
           ],
           "MappingMode": "None",
-          "Value": "\"\"",
+          "Value": "null",
           "UsedInNotifications": false,
           "StoreInAccountData": true
         }
@@ -75,7 +75,7 @@
             "Create"
           ],
           "MappingMode": "None",
-          "Value": "\"\"",
+          "Value": "null",
           "UsedInNotifications": false,
           "StoreInAccountData": false
         }
@@ -136,6 +136,22 @@
           "Value": "\"All\"",
           "UsedInNotifications": false,
           "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "EmailAddresses",
+      "Description": "EmailAddresses Please use carefully, this will update the primary mailadres, remove if not needed. ",
+      "Type": "Array",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Update"
+          ],
+          "MappingMode": "Complex",
+          "Value": "\"// generateProxyAddressesOption1.js [https://github.com/Tools4everBV/HelloID-Lib-Prov-HelperFunctions/blob/master/Javascript/Target/ProxyAddresses/Scripts/generateProxyAddressesOption1.js]\\r\\n//\\r\\n// Mapping logic to generate the ProxyAddresses according to the following convention.\\r\\n// First Choice\\t            B\\tSMTP:janine.vandenboele@domain.local\\r\\n// If in use\\t            B\\tSMTP:j.vandenboele@domain.local\\r\\n// If also in use\\t        B\\tSMTP:ja.vandenboele@domain.local\\r\\n// If also in use       \\tB\\tSMTP:jan.vandenboele@domain.local\\r\\n// If also in use       \\tB\\tSMTP:jani.vandenboele@domain.local\\r\\n// If also in use       \\tB\\tSMTP:janin.vandenboele@domain.local\\r\\n// If also in use       \\tB\\tSMTP:janine.vandenboele2@domain.local\\r\\n\\r\\nfunction generateProxyAddresses() {\\r\\n    const maxChars = 254 // The maximum length for an Entra ID mail is 254 characters (While the attribute length is 256 characters, a valid SMTP email address within this field can be up to 254 characters to account for the < and > characters)\\r\\n    const domain = 'domain.local';\\r\\n\\r\\n    let nickName = Person.Name.NickName;\\r\\n    let middleName = Person.Name.FamilyNamePrefix;\\r\\n    let lastName = Person.Name.FamilyName;\\r\\n\\r\\n    let mailNickName = '';\\r\\n\\r\\n    if (Iteration === 0) {\\r\\n        mailNickName = nickName + '.';\\r\\n    } else if (Iteration === 1) {\\r\\n        mailNickName = nickName.substring(0, 1) + '.';\\r\\n    } else if (Iteration < (nickName.length)) {\\r\\n        mailNickName = nickName.substring(0, (Iteration)) + '.';\\r\\n    } else {\\r\\n        mailNickName = nickName + '.';\\r\\n    }\\r\\n\\r\\n    if (typeof middleName !== 'undefined' && middleName) { mailNickName = mailNickName + middleName.replace(/ /g, '') }\\r\\n    mailNickName = mailNickName + lastName;\\r\\n\\r\\n    // Trim spaces at start and end\\r\\n    mailNickName = mailNickName.trim();\\r\\n\\r\\n    // Convert to lower case\\r\\n    mailNickName = mailNickName.toLowerCase();\\r\\n\\r\\n    // Remove diacritical chars\\r\\n    mailNickName = deleteDiacriticalMarks(mailNickName);\\r\\n\\r\\n    // Remove blank chars and \\\"'\\\"\\r\\n    mailNickName = mailNickName.replace(/[^0-9a-zA-Z.\\\\-_]/g, '');\\r\\n\\r\\n    // Shorten string to maxAttributeLength minus iteration length\\r\\n    let suffix = ''\\r\\n    let iterationToUse = Iteration - (nickName.length - 2)\\r\\n    suffix = Iteration === 0 ? '' : (iterationToUse);\\r\\n    const maxAttributeLength = (maxChars - suffix.toString().length - domain.toString().length);\\r\\n    mailNickName = mailNickName.substring(0, maxAttributeLength);\\r\\n\\r\\n    // Use the iterator if needed\\r\\n    if (Iteration > (nickName.length - 1)) {\\r\\n        mailNickName = mailNickName + suffix;\\r\\n    }\\r\\n\\r\\n    return [\\r\\n        'SMTP:' + mailNickName + '@' + domain\\r\\n    ];\\r\\n}\\r\\n\\r\\ngenerateProxyAddresses();\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": true
         }
       ]
     }

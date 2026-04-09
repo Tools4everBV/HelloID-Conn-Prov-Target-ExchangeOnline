@@ -115,9 +115,12 @@ try {
     if ($actionContext.Configuration.UseCertificate -eq $true) {
         Write-Information "Connecting to Exchange Online with certificate"
 
+        #region Retrieving certificate
         $actionMessage = "retrieving certificate"
         $certificate = Get-MSEntraCertificate
+        #endregion Retrieving certificate
 
+        #region Connect to Microsoft Exchange Online
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
         $actionMessage = "connecting to Microsoft Exchange Online"
 
@@ -137,10 +140,12 @@ try {
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
         Write-Information "Connected to Microsoft Exchange Online"
+        #endregion Connect to Microsoft Exchange Online
     }
     else {
         Write-Information "Connecting to Exchange Online with secret"
         
+        #region Create access token
         $actionMessage = "creating access token"
     
         $createAccessTokenBody = @{
@@ -164,7 +169,9 @@ try {
         $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
         Write-Information "Created access token."
+        #endregion Create access token
 
+        #region Connect to Microsoft Exchange Online
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
         $actionMessage = "connecting to Microsoft Exchange Online"
 
@@ -184,6 +191,7 @@ try {
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
         Write-Information "Connected to Microsoft Exchange Online"
+        #endregion Connect to Microsoft Exchange Online
     }
 
     $getExistingMailboxesSplatParams = @{
