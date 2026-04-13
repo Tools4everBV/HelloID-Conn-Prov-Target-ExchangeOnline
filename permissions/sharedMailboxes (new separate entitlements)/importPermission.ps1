@@ -210,13 +210,12 @@ try {
                 Permission = 'FullAccess'
             }       
             Description         = $sharedMailbox.UserPrincipalName
-            DisplayName         = $sharedMailbox.DisplayName + ' - Full Access'
+            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName + ' - Full Access'
         }
         # Batch permissions based on the amount of account references, 
         # to make sure the output objects are not above the limit
         $accountsBatchSize = 500
         if ($numberOfAccounts -gt 0) {
-            $accountsBatchSize = 500
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
@@ -238,13 +237,12 @@ try {
                 Permission = 'SendAs'
             }       
             Description         = $sharedMailbox.UserPrincipalName
-            DisplayName         = $sharedMailbox.DisplayName + ' - Send As'
+            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName + ' - Send As'
         }
         # Batch permissions based on the amount of account references, 
         # to make sure the output objects are not above the limit
         $accountsBatchSize = 500
         if ($numberOfAccounts -gt 0) {
-            $accountsBatchSize = 500
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
@@ -266,13 +264,12 @@ try {
                 Permission = 'SendOnBehalf'
             }       
             Description         = $sharedMailbox.UserPrincipalName
-            DisplayName         = $sharedMailbox.DisplayName + ' - Send on Behalf'
+            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName + ' - Send on Behalf'
         }
         # Batch permissions based on the amount of account references, 
         # to make sure the output objects are not above the limit
         $accountsBatchSize = 500
         if ($numberOfAccounts -gt 0) {
-            $accountsBatchSize = 500
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })

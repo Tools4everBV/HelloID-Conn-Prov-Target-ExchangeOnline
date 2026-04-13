@@ -222,7 +222,6 @@ try {
         # to make sure the output objects are not above the limit
         $accountsBatchSize = 500
         if ($numberOfAccounts -gt 0) {
-            $accountsBatchSize = 500
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })

@@ -8,7 +8,7 @@
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 # Permission definition settings
-$accessRights = @("FullAccess", "SendAs") # SendOnBehalf
+$accessRights = @("FullAccess", "SendAs") # Options: FullAccess, SendAs, SendOnBehalf
 
 # PowerShell commands to import
 $commands = @(

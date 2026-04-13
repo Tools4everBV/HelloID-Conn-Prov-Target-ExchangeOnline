@@ -7,6 +7,9 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Permission definition settings
+$accessRights = @("FullAccess", "SendAs") # Options: FullAccess, SendAs, SendOnBehalf
+
 # PowerShell commands to import
 $commands = @(
     "Add-MailboxPermission"  
@@ -274,7 +277,6 @@ try {
                         })
                 }
                 else {
-                    $accessRights = @("FullAccess", "SendAs") # Options: FullAccess, SendAs, SendOnBehalf
                     foreach ($accessRight in $accessRights) {
                         # Add shared mailbox to desired permissions with the desired access right + the guid as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
                         $desiredPermissions["$accessRight-$($microsoftExchangeOnlineSharedMailboxes.Guid)"] = "$accessRight-$($microsoftExchangeOnlineSharedMailboxes.DisplayName)"
