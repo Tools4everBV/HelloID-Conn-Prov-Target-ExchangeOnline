@@ -167,9 +167,10 @@ try {
         ErrorAction = 'Stop'
     }
     $mailboxes = Get-Mailbox @getAllMailboxesParams
-    $userMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' } | Select-Object Guid, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
+    $userMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' } | Select-Object Guid, Name, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
     $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
-    $userMailboxesExtDirObIdGrouped = $userMailboxes | Group-Object -Property 'ExternalDirectoryObjectId' -AsHashTable -AsString
+    $userMailboxesGuidGrouped = $userMailboxes | Group-Object -Property 'Guid' -AsHashTable -AsString
+    $userMailboxesNameGrouped = $userMailboxes | Group-Object -Property 'Name' -AsHashTable -AsString
     Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
     $sharedMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' } | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
     Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
@@ -226,9 +227,11 @@ try {
         # Send As
         $sendAsUsers = @()
         $sendAsPermissions = $allSendAsPermissionsGrouped[$sharedMailbox.Name]
-        foreach ($record in $sendAsPermissions) {
-            $sendAsUser = $userMailboxesUpnGrouped[$record.Trustee].guid
-            if ($sendAsUser) { $sendAsUsers += $sendAsUser }
+        if ($null -ne $sendAsPermissions) {
+            foreach ($record in $sendAsPermissions) {
+                $sendAsUser = $userMailboxesUpnGrouped[$record.Trustee].guid
+                if ($sendAsUser) { $sendAsUsers += $sendAsUser }
+            }
         }
         $numberOfAccounts = $sendAsUsers.Count
         $permission = @{
@@ -252,10 +255,33 @@ try {
 
         # Send On Behalf
         $sendOnBehalfUsers = @()
-        $sendOnPermissions = $sharedMailbox.GrantSendOnBehalfTo
-        foreach ($record in $sendOnPermissions) {
-            $sendOnBehalfUser = $userMailboxesExtDirObIdGrouped[$record].guid
-            if ($sendOnBehalfUser) { $sendOnBehalfUsers += $sendOnBehalfUser }
+        if ($null -ne $sharedMailbox.GrantSendOnBehalfTo -and $sharedMailbox.GrantSendOnBehalfTo.Count -gt 0) {
+            foreach ($trustee in $sharedMailbox.GrantSendOnBehalfTo) {
+                $sendOnBehalfUser = $null
+                $trusteeValue = [string]$trustee
+
+                # GrantSendOnBehalfTo can contain different identity formats (UPN, GUID, Name)
+                $trusteeMailbox = $userMailboxesUpnGrouped[$trusteeValue]
+                if (-not $trusteeMailbox) {
+                    $trusteeMailbox = $userMailboxesGuidGrouped[$trusteeValue]
+                }
+                if (-not $trusteeMailbox) {
+                    $trusteeMailbox = $userMailboxesNameGrouped[$trusteeValue]
+                }
+
+                if ($trusteeMailbox) {
+                    $sendOnBehalfUser = $trusteeMailbox.Guid
+                }
+
+                if (-not $sendOnBehalfUser) {
+                    $resolvedTrustee = Get-Mailbox -Identity $trusteeValue -ErrorAction SilentlyContinue | Select-Object -First 1 -Property Guid
+                    if ($resolvedTrustee.Guid) {
+                        $sendOnBehalfUser = $resolvedTrustee.Guid
+                    }
+                }
+
+                if ($sendOnBehalfUser) { $sendOnBehalfUsers += $sendOnBehalfUser }
+            }
         }
         $numberOfAccounts = $sendOnBehalfUsers.Count
         $permission = @{
