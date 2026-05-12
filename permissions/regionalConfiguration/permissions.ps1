@@ -9,11 +9,6 @@ $outputContext.Permissions.Add(
         DisplayName    = "Mailbox Regional Configuration - NL"
         Identification = @{
             Id                        = "MailboxRegionalConfiguration-NL"
-            Language                  = 'nl-NL'
-            DateFormat                = 'dd-MM-yy'
-            TimeFormat                = "H:mm"
-            TimeZone                  = "W. Europe Standard Time" 
-            LocalizeDefaultFolderName = $true
         }
     }
 )
