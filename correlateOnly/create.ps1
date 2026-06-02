@@ -88,7 +88,7 @@ try {
     $correlationValue = $actionContext.CorrelationConfiguration.personFieldValue
 
     # Define properties to query
-    $accountPropertiesToQuery = @("Guid") + $outputContext.Data.PsObject.Properties.Name | Select-Object -Unique
+    $accountPropertiesToQuery = @("Guid") + $outputContext.Data.PsObject.Properties.Name | ForEach-Object { $_.ToLower() }| Select-Object -Unique
     #endRegion account
 
     #region Verify correlation configuration and properties
