@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 - Minor improvements and refinements
 
+### Removed
+- Litigation Hold scripts [#29](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/issues/29)
+
 ## [3.1.0] - 15-12-2025
 - Added certificate support
 - Enhanced README [#24](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/issues/24)
