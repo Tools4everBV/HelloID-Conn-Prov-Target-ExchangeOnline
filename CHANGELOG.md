@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.1] - 15-06-2026
+
+### Added
+- NEw Workflow files
+
 ## [3.2.0] - 13-04-2026
 
 ### Added
@@ -9,7 +14,6 @@ All notable changes to this project will be documented in this file. The format 
 - Added `importPermission.ps1` and `importSubPermissions.ps1` scripts for Shared Mailboxes (legacy and new separate entitlements)
 - Added dynamic permissions support for the new Shared Mailboxes separate entitlements implementation
 - Added marker fields in resource scripts to support reliable permission imports
-- New workflow files
 
 ### Changed
 - Minor improvements and refinements
