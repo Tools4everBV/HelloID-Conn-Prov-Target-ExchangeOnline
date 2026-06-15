@@ -89,10 +89,11 @@ try {
     $importFields = $($actionContext.ImportFields)
     $importFields = $importFields -replace '\..*', ''
 
-    # Remove fieldmapping that are not avaliable in 'Get-EXOMailbox'
+    # Remove fieldmapping that are not available in 'Get-EXOMailbox'
     $importFields = $importFields | Where-Object { $_ -ne 'AutoReplyState' }
     $importFields = $importFields | Where-Object { $_ -ne 'InternalMessage' }
     $importFields = $importFields | Where-Object { $_ -ne 'ExternalMessage' }
+    $importFields = $importFields | Where-Object { $_ -ne 'ExternalAudience' }
     
     # Add mandatory fields for HelloID to query and return
     if ('Guid' -notin $importFields) { $importFields += 'Guid' }

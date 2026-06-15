@@ -7,6 +7,11 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Define correlation and marker fields
+$correlationField = "CustomAttribute1"
+$markerField = "CustomAttribute2"
+$markerValue = "HelloID Dynamic Distribution Group"
+
 # Determine all the sub-permissions that needs to be Granted/Updated/Revoked
 $currentPermissions = @{ }
 foreach ($permission in $actionContext.CurrentPermissions) {
@@ -119,9 +124,6 @@ function Get-MSEntraCertificate {
 }
 #endregion functions
 
-# Define correlation field
-$correlationField = "CustomAttribute1"
-
 #region Get Access Token
 try {
     #region Import module
@@ -233,7 +235,7 @@ try {
 
     $getMicrosoftExchangeOnlineDistributionGroupsResponse = $null
     $getMicrosoftExchangeOnlineDistributionGroupsResponse = Get-DistributionGroup @getMicrosoftExchangeOnlineDistributionGroupsSplatParams
-    $microsoftExchangeOnlineDistributionGroups = $getMicrosoftExchangeOnlineDistributionGroupsResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
+    $microsoftExchangeOnlineDistributionGroups = $getMicrosoftExchangeOnlineDistributionGroupsResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField, $markerField) | Select-Object -Unique)
 
     Write-Information "Queried Microsoft Exchange Online distribution groups. Result count: $(($microsoftExchangeOnlineDistributionGroups | Measure-Object).Count)"
     #endregion Get distribution groups
@@ -307,6 +309,7 @@ try {
                 $updateDistributionGroupSplatParams = @{
                     Identity          = $createDistributionGroupResponse.Guid 
                     $correlationField = $correlationValue
+                    $markerField      = $markerValue
                     Verbose           = $false
                     ErrorAction       = "Stop"
                 }
@@ -318,12 +321,12 @@ try {
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action  = "" # Optional
-                            Message = "Updated [$correlationField] with [$correlationValue] for created distribution group with id [$($createDistributionGroupResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                            Message = "Updated [$correlationField] with [$correlationValue] and [$markerField] with [$markerValue] for created distribution group with id [$($createDistributionGroupResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
                 else {
-                    Write-Warning "DryRun: Would update [$correlationField] with [$correlationValue] for created distribution group with id [$($createDistributionGroupResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                    Write-Warning "DryRun: Would update [$correlationField] with [$correlationValue] and [$markerField] with [$markerValue] for created distribution group with id [$($createDistributionGroupResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                 }
                 #endregion Update distribution group
 

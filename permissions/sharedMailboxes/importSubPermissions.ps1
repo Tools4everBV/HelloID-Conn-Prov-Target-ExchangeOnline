@@ -1,11 +1,30 @@
 #################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-SharedMailboxes-Import
-# Correlate to permission
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-ImportSubPermissions-SharedMailboxes
+# Import sub permissions
 # PowerShell V2
 #################################################
 
+# Configure, must be the same as the values used in retrieve permissions
+$permissionReference = 'smb'
+$permissionDisplayName = 'Shared Mailbox'
+
+# Define source filter for Exchange Online shared mailboxes
+# Option 1 (default): use custom attributes
+$filterField = 'CustomAttribute2'
+$filterValue = 'HelloID Dynamic Shared Mailbox'
+
+# Option 2: use displayName strategy
+# $filterField = 'DisplayName'
+# $filterValue = 'smb_'
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+# PowerShell commands to import
+$commands = @(
+    'Get-Mailbox'
+    , 'Get-EXOMailboxPermission'
+)
 
 #region functions
 function Resolve-ExchangeOnlineError {
@@ -42,7 +61,7 @@ function Resolve-ExchangeOnlineError {
             elseif ($null -ne $errorObjectConverted.error) {
                 if ($null -ne $errorObjectConverted.error.message) {
                     $httpErrorObj.FriendlyMessage = $errorObjectConverted.error.message
-                    if ($null -ne $errorObjectConverted.error.code) { 
+                    if ($null -ne $errorObjectConverted.error.code) {
                         $httpErrorObj.FriendlyMessage = $httpErrorObj.FriendlyMessage + " Error code: $($errorObjectConverted.error.code)"
                     }
                 }
@@ -76,25 +95,29 @@ function Get-MSEntraCertificate {
 #endregion functions
 
 try {
-    Write-Information 'Starting target shared mailbox permissions import'
-    $actionMessage = "importing module [ExchangeOnlineManagement]"
+    Write-Information 'Starting Exchange Online permission entitlement import for shared mailboxes'
+
+    $actionMessage = 'importing module [ExchangeOnlineManagement]'
+
     $importModuleSplatParams = @{
-        Name        = "ExchangeOnlineManagement"
-        Cmdlet      = 'Get-User,Get-Mailbox,Get-EXOMailboxPermission,Get-EXORecipientPermission'
+        Name        = 'ExchangeOnlineManagement'
+        Cmdlet      = $commands
         Verbose     = $false
-        ErrorAction = "Stop"
+        ErrorAction = 'Stop'
     }
+
     $null = Import-Module @importModuleSplatParams
+
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
 
     if ($actionContext.Configuration.UseCertificate -eq $true) {
-        Write-Information "Connecting to Exchange Online with certificate"
+        Write-Information 'Connecting to Exchange Online with certificate'
 
-        $actionMessage = "retrieving certificate"
+        $actionMessage = 'retrieving certificate'
         $certificate = Get-MSEntraCertificate
 
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-        $actionMessage = "connecting to Microsoft Exchange Online"
+        $actionMessage = 'connecting to Microsoft Exchange Online'
 
         $createExchangeSessionSplatParams = @{
             Organization          = $actionContext.Configuration.Organization
@@ -106,41 +129,42 @@ try {
             TrackPerformance      = $false
             SkipLoadingCmdletHelp = $true
             SkipLoadingFormatData = $true
-            ErrorAction           = "Stop"
+            ErrorAction           = 'Stop'
         }
 
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        
-        Write-Information "Connected to Microsoft Exchange Online"
+
+        Write-Information 'Connected to Microsoft Exchange Online'
     }
     else {
-        Write-Information "Connecting to Exchange Online with secret"
-        
-        $actionMessage = "creating access token"
-    
+        Write-Information 'Connecting to Exchange Online with secret'
+
+        $actionMessage = 'creating access token'
+
         $createAccessTokenBody = @{
-            grant_type    = "client_credentials"
+            grant_type    = 'client_credentials'
             client_id     = $actionContext.Configuration.AppId
             client_secret = $actionContext.Configuration.AppSecret
-            resource      = "https://outlook.office365.com"
+            resource      = 'https://outlook.office365.com'
         }
 
         $createAccessTokenSplatParams = @{
             Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
             Headers         = $headers
-            Method          = "POST"
-            ContentType     = "application/x-www-form-urlencoded"
+            Method          = 'POST'
+            ContentType     = 'application/x-www-form-urlencoded'
             UseBasicParsing = $true
             Body            = $createAccessTokenBody
             Verbose         = $false
-            ErrorAction     = "Stop"
+            ErrorAction     = 'Stop'
         }
 
         $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
-        Write-Information "Created access token."
+        Write-Information 'Created access token.'
+
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
-        $actionMessage = "connecting to Microsoft Exchange Online"
+        $actionMessage = 'connecting to Microsoft Exchange Online'
 
         $createExchangeSessionSplatParams = @{
             Organization          = $actionContext.Configuration.Organization
@@ -152,33 +176,37 @@ try {
             TrackPerformance      = $false
             SkipLoadingCmdletHelp = $true
             SkipLoadingFormatData = $true
-            ErrorAction           = "Stop"
+            ErrorAction           = 'Stop'
         }
 
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        
-        Write-Information "Connected to Microsoft Exchange Online"
+
+        Write-Information 'Connected to Microsoft Exchange Online'
     }
 
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-mailbox?view=exchange-ps
-    $actionMessage = "getting all mailboxes from Microsoft Exchange Online"
+    $actionMessage = 'getting all shared mailboxes from Microsoft Exchange Online'
+    
     $getAllMailboxesParams = @{
         ResultSize  = 'Unlimited'
         ErrorAction = 'Stop'
     }
+    
     $mailboxes = Get-Mailbox @getAllMailboxesParams
     $userMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' } | Select-Object Guid, Name, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
     $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
     $userMailboxesGuidGrouped = $userMailboxes | Group-Object -Property 'Guid' -AsHashTable -AsString
     $userMailboxesNameGrouped = $userMailboxes | Group-Object -Property 'Name' -AsHashTable -AsString
     Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
-    $sharedMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' } | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
-    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
+    $sharedMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' } | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo, CustomAttribute2
+
+    $sharedMailboxes = $sharedMailboxes | Where-Object { $_.$filterField -like "$filterValue*" }
+
+
+    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes matching filter [$filterField = $filterValue]"
     # Cleanup for memory
     $userMailboxes = $null
     $mailboxes = $null
 
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-recipientpermission?view=exchange-ps
     $actionMessage = "getting all recipient permissions from Microsoft Exchange Online"
     $getAllRecipientPermissionsParams = @{
         ResultSize   = 'Unlimited'
@@ -187,80 +215,91 @@ try {
     }
     $allSendAsPermissions = Get-EXORecipientPermission @getAllRecipientPermissionsParams | Where-Object { $_.AccessControlType -eq 'Allow' } | Select-Object Identity, Trustee
     $allSendAsPermissionsGrouped = $allSendAsPermissions | Group-Object -Property 'Identity' -AsHashTable -AsString
-    Write-Information "Successfully queried [$($allSendAsPermissions.count)] recipient permissions"
-    # Cleanup for memory
+    Write-Information "Successfully queried [$($allSendAsPermissions.count)] recipient permissions (SendAs)"
     $allSendAsPermissions = $null
 
+    $actionMessage = 'querying mailbox permissions'
+    
     foreach ($sharedMailbox in $sharedMailboxes) {
-        # Full Access
+        # Get FullAccess permissions for this shared mailbox
         $getFullAccessPermissionsParams = @{
             Identity    = $sharedMailbox.Guid
             ResultSize  = 'Unlimited'
             ErrorAction = 'Stop'
         }
+        
         $fullAccessUsers = @()
-        $fullAccessPermissions = Get-EXOMailboxPermission @getFullAccessPermissionsParams | Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } | Select-Object User
+        $fullAccessPermissions = Get-EXOMailboxPermission @getFullAccessPermissionsParams | 
+        Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } |
+        Select-Object User
+        
         foreach ($record in $fullAccessPermissions) {
-            $fullAccessUser = $userMailboxesUpnGrouped[$record.User].guid
+            $fullAccessUser = $userMailboxesUpnGrouped[$record.User].Guid
             if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }
         }
+        
         $numberOfAccounts = $fullAccessUsers.Count
+        
         $permission = @{
-            PermissionReference = @{
-                Id         = $sharedMailbox.Guid
-                Permission = 'FullAccess'
-            }       
-            Description         = $sharedMailbox.UserPrincipalName
-            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName + ' - Full Access'
+            PermissionReference      = @{
+                Reference = $permissionReference
+            }
+            DisplayName              = "Permission - $permissionDisplayName"
+            SubPermissionReference   = @{
+                Id = "FullAccess-$($sharedMailbox.Guid)"
+            }
+            SubPermissionDisplayName = "FullAccess-$($sharedMailbox.DisplayName)"
         }
-        # Batch permissions based on the amount of account references, 
+        
+        # Batch permissions based on the amount of account references,
         # to make sure the output objects are not above the limit
         $accountsBatchSize = 500
         if ($numberOfAccounts -gt 0) {
-            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
+            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
                 Write-Output $permission
             }
         }
 
-        # Send As
+        # Get SendAs permissions for this shared mailbox
         $sendAsUsers = @()
         $sendAsPermissions = $allSendAsPermissionsGrouped[$sharedMailbox.Name]
         if ($null -ne $sendAsPermissions) {
             foreach ($record in $sendAsPermissions) {
-                $sendAsUser = $userMailboxesUpnGrouped[$record.Trustee].guid
+                $sendAsUser = $userMailboxesUpnGrouped[$record.Trustee].Guid
                 if ($sendAsUser) { $sendAsUsers += $sendAsUser }
             }
         }
+
         $numberOfAccounts = $sendAsUsers.Count
+
         $permission = @{
-            PermissionReference = @{
-                Id         = $sharedMailbox.Guid
-                Permission = 'SendAs'
-            }       
-            Description         = $sharedMailbox.UserPrincipalName
-            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName + ' - Send As'
+            PermissionReference      = @{
+                Reference = $permissionReference
+            }
+            DisplayName              = "Permission - $permissionDisplayName"
+            SubPermissionReference   = @{
+                Id = "SendAs-$($sharedMailbox.Guid)"
+            }
+            SubPermissionDisplayName = "SendAs-$($sharedMailbox.DisplayName)"
         }
-        # Batch permissions based on the amount of account references, 
-        # to make sure the output objects are not above the limit
-        $accountsBatchSize = 500
+
         if ($numberOfAccounts -gt 0) {
-            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
+            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
                 Write-Output $permission
             }
         }
 
-        # Send On Behalf
+        # Get SendOnBehalf permissions for this shared mailbox
         $sendOnBehalfUsers = @()
         if ($null -ne $sharedMailbox.GrantSendOnBehalfTo -and $sharedMailbox.GrantSendOnBehalfTo.Count -gt 0) {
             foreach ($trustee in $sharedMailbox.GrantSendOnBehalfTo) {
                 $sendOnBehalfUser = $null
                 $trusteeValue = [string]$trustee
 
-                # GrantSendOnBehalfTo can contain different identity formats (UPN, GUID, Name)
                 $trusteeMailbox = $userMailboxesUpnGrouped[$trusteeValue]
                 if (-not $trusteeMailbox) {
                     $trusteeMailbox = $userMailboxesGuidGrouped[$trusteeValue]
@@ -283,27 +322,30 @@ try {
                 if ($sendOnBehalfUser) { $sendOnBehalfUsers += $sendOnBehalfUser }
             }
         }
+
         $numberOfAccounts = $sendOnBehalfUsers.Count
+
         $permission = @{
-            PermissionReference = @{
-                Id         = $sharedMailbox.Guid
-                Permission = 'SendOnBehalf'
-            }       
-            Description         = $sharedMailbox.UserPrincipalName
-            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName + ' - Send on Behalf'
+            PermissionReference      = @{
+                Reference = $permissionReference
+            }
+            DisplayName              = "Permission - $permissionDisplayName"
+            SubPermissionReference   = @{
+                Id = "SendOnBehalf-$($sharedMailbox.Guid)"
+            }
+            SubPermissionDisplayName = "SendOnBehalf-$($sharedMailbox.DisplayName)"
         }
-        # Batch permissions based on the amount of account references, 
-        # to make sure the output objects are not above the limit
-        $accountsBatchSize = 500
+
         if ($numberOfAccounts -gt 0) {
-            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
+            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
                 $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })
                 Write-Output $permission
             }
         }
     }
-    Write-Information 'Target permission import for shared mailboxes is completed'
+
+    Write-Information 'Exchange Online shared mailbox permission entitlement import completed'
 }
 catch {
     $ex = $PSItem
@@ -317,16 +359,20 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
+
     Write-Warning $warningMessage
     Write-Error $auditMessage
 }
 finally {
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "disconnecting from Microsoft Exchange Online"
+    $actionMessage = 'disconnecting from Microsoft Exchange Online'
+
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
-        ErrorAction = "Stop"
+        ErrorAction = 'Stop'
     }
+
     $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
-    Write-Information "Disconnected from Microsoft Exchange Online"
+
+    Write-Information 'Disconnected from Microsoft Exchange Online'
 }

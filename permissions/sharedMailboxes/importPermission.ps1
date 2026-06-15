@@ -1,16 +1,11 @@
-#####################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-LitigationHold-Revoke
-# Disable litigation hold on mailbox
+#################################################
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-SharedMailboxes-Import
+# Correlate to permission
 # PowerShell V2
-#####################################################
+#################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-
-# Define PowerShell commands to import
-$commands = @(
-    "Set-Mailbox"
-)
 
 #region functions
 function Resolve-ExchangeOnlineError {
@@ -62,7 +57,8 @@ function Resolve-ExchangeOnlineError {
         catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
-        Write-Output $httpErrorObj
+        # Write-Output $httpErrorObj
+        return $httpErrorObj
     }
 }
 
@@ -81,38 +77,23 @@ function Get-MSEntraCertificate {
 #endregion functions
 
 try {
-    #region Verify account reference
-    $actionMessage = "verifying account reference"
-    
-    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
-        throw "The account reference could not be found"
-    }
-    #endregion Verify account reference
-
-    #region Import module
+    Write-Information 'Starting target shared mailbox permissions import'
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = $commands
+        Cmdlet      = 'Get-User,Get-Mailbox,Get-EXOMailboxPermission,Get-EXORecipientPermission'
         Verbose     = $false
         ErrorAction = "Stop"
     }
-
     $null = Import-Module @importModuleSplatParams
-
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
 
     if ($actionContext.Configuration.UseCertificate -eq $true) {
         Write-Information "Connecting to Exchange Online with certificate"
 
-        #region Retrieving certificate
         $actionMessage = "retrieving certificate"
         $certificate = Get-MSEntraCertificate
-        #endregion Retrieving certificate
 
-        #region Connect to Microsoft Exchange Online
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
         $actionMessage = "connecting to Microsoft Exchange Online"
 
@@ -132,12 +113,10 @@ try {
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
         Write-Information "Connected to Microsoft Exchange Online"
-        #endregion Connect to Microsoft Exchange Online
     }
     else {
         Write-Information "Connecting to Exchange Online with secret"
         
-        #region Create access token
         $actionMessage = "creating access token"
     
         $createAccessTokenBody = @{
@@ -161,9 +140,7 @@ try {
         $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
         Write-Information "Created access token."
-        #endregion Create access token
 
-        #region Connect to Microsoft Exchange Online
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
         $actionMessage = "connecting to Microsoft Exchange Online"
 
@@ -183,35 +160,57 @@ try {
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
         Write-Information "Connected to Microsoft Exchange Online"
-        #endregion Connect to Microsoft Exchange Online
     }
 
-    #region Disable litigation hold
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
-    $actionMessage = "disabling litigation hold on mailbox [$($actionContext.References.Account)]"
-
-    $disableLitigationHoldSplatParams = @{
-        Identity              = $actionContext.References.Account
-        LitigationHoldEnabled = $false
-        Verbose               = $false
-        ErrorAction           = "Stop"
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-mailbox?view=exchange-ps
+    $actionMessage = "getting all mailboxes from Microsoft Exchange Online"
+    $getAllMailboxesParams = @{
+        ResultSize  = 'Unlimited'
+        ErrorAction = 'Stop'
     }
+    $mailboxes = Get-Mailbox @getAllMailboxesParams
+    $userMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' } | Select-Object Guid, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
+    $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
+    Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
+    $sharedMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' } | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
+    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
+    # Cleanup for memory
+    $userMailboxes = $null
+    $mailboxes = $null
 
-    Write-Information "SplatParams: $($disableLitigationHoldSplatParams | ConvertTo-Json)"
-
-    if (-Not($actionContext.DryRun -eq $true)) {
-        $null = Set-Mailbox @disableLitigationHoldSplatParams
-
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Disabled litigation hold on mailbox [$($actionContext.References.Account)]."
-                IsError = $false
-            })
+    foreach ($sharedMailbox in $sharedMailboxes) {
+        # If Full Access then permission is returned
+        $getFullAccessPermissionsParams = @{
+            Identity    = $sharedMailbox.Guid
+            ResultSize  = 'Unlimited'
+            ErrorAction = 'Stop'
+        }
+        $fullAccessUsers = @()
+        $fullAccessPermissions = Get-EXOMailboxPermission @getFullAccessPermissionsParams | Where-Object { $_.AccessRights -eq 'FullAccess' -and $_.Deny -eq $false } | Select-Object User
+        foreach ($record in $fullAccessPermissions) {
+            $fullAccessUser = $userMailboxesUpnGrouped[$record.User].guid
+            if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }
+        }
+        $numberOfAccounts = $fullAccessUsers.Count
+        $permission = @{
+            PermissionReference = @{
+                Id = $sharedMailbox.Guid
+            }       
+            Description         = $sharedMailbox.UserPrincipalName
+            DisplayName         = 'Shared Mailbox - ' + $sharedMailbox.DisplayName
+        }
+        # Batch permissions based on the amount of account references, 
+        # to make sure the output objects are not above the limit
+        $accountsBatchSize = 500
+        if ($numberOfAccounts -gt 0) {
+            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
+            foreach ($batch in $batches) {
+                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
+                Write-Output $permission
+            }
+        }
     }
-    else {
-        Write-Warning "DryRun: Would disabled litigation hold on mailbox [$($actionContext.References.Account)]."
-    }
-    #endregion Disable litigation hold
+    Write-Information 'Target permission import for shared mailboxes is completed'
 }
 catch {
     $ex = $PSItem
@@ -225,32 +224,16 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-
     Write-Warning $warningMessage
-
-    $outputContext.AuditLogs.Add([PSCustomObject]@{
-            # Action  = "" # Optional
-            Message = $auditMessage
-            IsError = $true
-        })
+    Write-Error $auditMessage
 }
 finally {
-    #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "disconnecting to Microsoft Exchange Online"
-
+    $actionMessage = "disconnecting from Microsoft Exchange Online"
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
         ErrorAction = "Stop"
     }
-
     $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
-    
     Write-Information "Disconnected from Microsoft Exchange Online"
-    #endregion Disconnect from Microsoft Exchange Online
-
-    # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
-        $outputContext.Success = $true
-    }
 }

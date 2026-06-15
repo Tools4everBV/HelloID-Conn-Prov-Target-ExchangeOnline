@@ -12,6 +12,12 @@ $commands = @(
     "Set-MailboxRegionalConfiguration"
 )
 
+$language                  = 'nl-NL'
+$dateFormat                = 'dd-MM-yy'
+$timeFormat                = "H:mm"
+$timeZone                  = "W. Europe Standard Time" 
+$localizeDefaultFolderName = $true
+
 #region functions
 function Resolve-ExchangeOnlineError {
     [CmdletBinding()]
@@ -189,32 +195,32 @@ try {
 
     #region Set Mailbox Regional Configuration
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailboxregionalconfiguration?view=exchange-ps
-    $actionMessage = "setting Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]"
+    $actionMessage = "setting Mailbox Regional Configuration with language [$($language)] and timezone [$($timeZone)] on mailbox [$($actionContext.References.Account)]"
 
     $setMailboxRegionalConfigurationSplatParams = @{
         Identity                  = $actionContext.References.Account
-        Language                  = $actionContext.References.Permission.Language
-        DateFormat                = $actionContext.References.Permission.DateFormat
-        TimeFormat                = $actionContext.References.Permission.TimeFormat
-        TimeZone                  = $actionContext.References.Permission.TimeZone
-        LocalizeDefaultFolderName = $actionContext.References.Permission.LocalizeDefaultFolderName
+        Language                  = $language
+        DateFormat                = $dateFormat
+        TimeFormat                = $timeFormat
+        TimeZone                  = $timeZone
+        LocalizeDefaultFolderName = $localizeDefaultFolderName
         Verbose                   = $false
         ErrorAction               = "Stop"
     }
 
-    Write-Information "SplatParams: $($enableLitigationHoldSplatParams | ConvertTo-Json)"
+    Write-Information "SplatParams: $($setMailboxRegionalConfigurationSplatParams | ConvertTo-Json)"
 
     if (-Not($actionContext.DryRun -eq $true)) {
         $null = Set-MailboxRegionalConfiguration @setMailboxRegionalConfigurationSplatParams
 
         $outputContext.AuditLogs.Add([PSCustomObject]@{
                 # Action  = "" # Optional
-                Message = "Set Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]."
+                Message = "Set Mailbox Regional Configuration with language [$($language)] and timezone [$($timeZone)] on mailbox [$($actionContext.References.Account)]."
                 IsError = $false
             })
     }
     else {
-        Write-Warning "DryRun: Would set Mailbox Regional Configuration with language [$($actionContext.References.Permission.Language)] and timezone [$($actionContext.References.Permission.Language)] on mailbox [$($actionContext.References.Account)]."
+        Write-Warning "DryRun: Would set Mailbox Regional Configuration with language [$($language)] and timezone [$($timeZone)] on mailbox [$($actionContext.References.Account)]."
     }
     #endregion Set Mailbox Regional Configuration
 }

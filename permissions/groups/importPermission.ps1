@@ -1,16 +1,11 @@
-#####################################################
-# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-LitigationHold-Grant
-# Enable litigation hold and set the duration on mailbox
+#################################################
+# HelloID-Conn-Prov-Target-Microsoft-Exchange-Online-Permissions-Groups-Import
+# Correlate to permission
 # PowerShell V2
-#####################################################
+#################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-
-# Define PowerShell commands to import
-$commands = @(
-    "Set-Mailbox"
-)
 
 #region functions
 function Resolve-ExchangeOnlineError {
@@ -62,7 +57,8 @@ function Resolve-ExchangeOnlineError {
         catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
-        Write-Output $httpErrorObj
+        # Write-Output $httpErrorObj
+        return $httpErrorObj
     }
 }
 
@@ -81,38 +77,24 @@ function Get-MSEntraCertificate {
 #endregion functions
 
 try {
-    #region Verify account reference
-    $actionMessage = "verifying account reference"
-    
-    if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
-        throw "The account reference could not be found"
-    }
-    #endregion Verify account reference
-
-    #region Import module
+    Write-Information 'Starting target distribution groups permissions import'
     $actionMessage = "importing module [ExchangeOnlineManagement]"
-    
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = $commands
+        Cmdlet      = 'Get-User,Get-Mailbox,Get-DistributionGroup,Get-DistributionGroupMember'
         Verbose     = $false
         ErrorAction = "Stop"
     }
-
     $null = Import-Module @importModuleSplatParams
-
     Write-Information "Imported module [$($importModuleSplatParams.Name)]"
-    #endregion Import module
 
     if ($actionContext.Configuration.UseCertificate -eq $true) {
         Write-Information "Connecting to Exchange Online with certificate"
 
-        #region Retrieving certificate
+
         $actionMessage = "retrieving certificate"
         $certificate = Get-MSEntraCertificate
-        #endregion Retrieving certificate
 
-        #region Connect to Microsoft Exchange Online
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
         $actionMessage = "connecting to Microsoft Exchange Online"
 
@@ -132,12 +114,10 @@ try {
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
         Write-Information "Connected to Microsoft Exchange Online"
-        #endregion Connect to Microsoft Exchange Online
     }
     else {
         Write-Information "Connecting to Exchange Online with secret"
         
-        #region Create access token
         $actionMessage = "creating access token"
     
         $createAccessTokenBody = @{
@@ -161,9 +141,7 @@ try {
         $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
 
         Write-Information "Created access token."
-        #endregion Create access token
 
-        #region Connect to Microsoft Exchange Online
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/connect-exchangeonline?view=exchange-ps
         $actionMessage = "connecting to Microsoft Exchange Online"
 
@@ -183,36 +161,75 @@ try {
         $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
         
         Write-Information "Connected to Microsoft Exchange Online"
-        #endregion Connect to Microsoft Exchange Online
     }
 
-    #region Enable litigation hold
-    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-mailbox?view=exchange-ps
-    $actionMessage = "enabling litigation hold and set the duration to [$($actionContext.References.Permission.Duration)] days on mailbox [$($actionContext.References.Account)]"
-
-    $enableLitigationHoldSplatParams = @{
-        Identity               = $actionContext.References.Account
-        LitigationHoldEnabled  = $true
-        LitigationHoldDuration = $actionContext.References.Permission.Duration
-        Verbose                = $false
-        ErrorAction            = "Stop"
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-distributiongroup?view=exchange-ps#
+    $actionMessage = "getting all distribution groups from Microsoft Exchange Online"
+    $getAllDistributionGroupsParams = @{
+        Filter      = "IsDirSynced -eq 'False'"
+        ResultSize  = 'Unlimited'
+        ErrorAction = 'Stop'
     }
+    $getDistributionGroups = Get-DistributionGroup @getAllDistributionGroupsParams
+    $distributionGroups = $getDistributionGroups | Select-Object Guid, DisplayName, RecipientTypeDetails, Description
+    Write-Information "Successfully queried [$($distributionGroups.count)] distribution groups"
+    # Cleanup for memory
+    $getDistributionGroups = $null
 
-    Write-Information "SplatParams: $($enableLitigationHoldSplatParams | ConvertTo-Json)"
+    foreach ($distributionGroup in $distributionGroups) {
+        $getDistributionGroupMembersParams = @{
+            Identity    = $distributionGroup.Guid
+            ResultSize  = 'Unlimited'
+            ErrorAction = 'Stop'
+        }
+        $groupMemberResponse = Get-DistributionGroupMember @getDistributionGroupMembersParams
+        $userMailboxGroupMembers = $groupMemberResponse | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' }
+        $distributionGroupMembers = @()
+        $distributionGroupMembers = ($userMailboxGroupMembers).guid
+        
+        # Make sure the displayname has a value of max 100 char
+        if (-not([string]::IsNullOrEmpty($distributionGroup.DisplayName))) {
+            $displayname = $($distributionGroup.DisplayName).substring(0, [System.Math]::Min(100, $($distributionGroup.DisplayName).Length))
+        }
+        else {
+            $displayname = $distributionGroup.guid
+        }
 
-    if (-Not($actionContext.DryRun -eq $true)) {
-        $null = Set-Mailbox @enableLitigationHoldSplatParams
+        if ($distributionGroup.RecipientTypeDetails -eq 'MailUniversalSecurityGroup') {
+            $displayname = "Mail-enabled Security Group - $($distributionGroup.DisplayName)"
+        }
+        else {
+            $displayname = "Distribution Group - $($distributionGroup.DisplayName)"
+            
+        }
+        $displayname = $($displayname).substring(0, [System.Math]::Min(100, $($displayname).Length))
 
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                # Action  = "" # Optional
-                Message = "Enabled litigation hold and set the duration to [$($actionContext.References.Permission.Duration)] days on mailbox [$($actionContext.References.Account)]."
-                IsError = $false
-            })
+        $description = $distributionGroup.Description[0]
+        # Make sure the description has a value of max 100 char
+        if (-not([string]::IsNullOrEmpty($description))) {
+            $description = $($description).substring(0, [System.Math]::Min(100, $($description).Length))
+        }
+
+        $numberOfAccounts = $distributionGroupMembers.Count
+        $permission = @{
+            PermissionReference = @{
+                Id = $distributionGroup.Guid
+            }       
+            Description         = $description
+            DisplayName         = $displayname
+        }
+        # Batch permissions based on the amount of account references, 
+        # to make sure the output objects are not above the limit
+        $accountsBatchSize = 500
+        if ($numberOfAccounts -gt 0) {
+            $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
+            foreach ($batch in $batches) {
+                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })
+                Write-Output $permission
+            }
+        }
     }
-    else {
-        Write-Warning "DryRun: Would enabled litigation hold and set the duration to [$($actionContext.References.Permission.Duration)] days on mailbox [$($actionContext.References.Account)]."
-    }
-    #endregion Enable litigation hold
+    Write-Information 'Target permission import for distribution groups is completed'
 }
 catch {
     $ex = $PSItem
@@ -226,32 +243,16 @@ catch {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
-
     Write-Warning $warningMessage
-
-    $outputContext.AuditLogs.Add([PSCustomObject]@{
-            # Action  = "" # Optional
-            Message = $auditMessage
-            IsError = $true
-        })
+    Write-Error $auditMessage
 }
 finally {
-    #region Disconnect from Microsoft Exchange Online
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/disconnect-exchangeonline?view=exchange-ps
-    $actionMessage = "disconnecting to Microsoft Exchange Online"
-
+    $actionMessage = "disconnecting from Microsoft Exchange Online"
     $deleteExchangeSessionSplatParams = @{
         Confirm     = $false
         ErrorAction = "Stop"
     }
-
     $null = Disconnect-ExchangeOnline @deleteExchangeSessionSplatParams
-    
     Write-Information "Disconnected from Microsoft Exchange Online"
-    #endregion Disconnect from Microsoft Exchange Online
-
-    # Check if auditLogs contains errors, if no errors are found, set success to true
-    if (-NOT($outputContext.AuditLogs.IsError -contains $true)) {
-        $outputContext.Success = $true
-    }
 }

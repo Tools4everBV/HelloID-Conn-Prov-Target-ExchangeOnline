@@ -37,12 +37,12 @@
 
 ## Supported features:
 | Feature                             | Supported | Actions                                 | Remarks                                                                                                                                        |
-| ----------------------------------- | --------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+|-------------------------------------|-----------|-----------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Account Lifecycle**               | ✅         | Create, Update, Enable, Disable, Delete | Create is for correlating, Enable/Disable for hidefromaddresslist, update for editing mailbox attributes and delete for out of office messages |
 | **Permissions**                     | ✅         | Retrieve, Grant, Revoke                 | Groups, shared mailboxes, folder permissions, litigation hold, regional configuration                                                          |
 | **Resources**                       | ✅         | -                                       | For groups and shared mailboxes                                                                                                                |
 | **Entitlement Import: Accounts**    | ✅         | -                                       |                                                                                                                                                |
-| **Entitlement Import: Permissions** | ✅         | -                                       | Only for the new shared mailboxes scripts. ⚠️Warning this new shared mailbox scripts are not backwards compatible!⚠️                             |
+| **Entitlement Import: Permissions** | ✅         | -                                       | Only for the shared mailboxes and groups scripts. ⚠️Warning the new shared mailbox scripts are not backwards compatible!⚠️                     |
 
 ## Introduction
 For this connector we have the option to correlate to and/or update Exchange Online (Office 365) users and/or mailboxes and provision permission(s) to a group and/or shared mailbox.
@@ -106,7 +106,7 @@ $fileContentBytes = [System.IO.File]::ReadAllBytes("$pfxPath")
 The following settings are required to connect.
 
 | Setting                                | Description                                                                                    | Mandatory                         |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------- |
+|----------------------------------------|------------------------------------------------------------------------------------------------|-----------------------------------|
 | Entra ID Organization                  | The name of the organization to connect to and where the Entra ID App Registration exists.     | Yes                               |
 | Entra ID Tenant ID                     | Id of the Entra ID tenant                                                                      | Yes                               |
 | Entra ID App Id                        | The Application (client) ID of the Entra ID App Registration with Exchange Permissions         | Yes                               |
@@ -124,7 +124,7 @@ The following settings are required to connect.
 The correlation configuration is used to specify which properties will be used to match an existing account within _Exchange Online_ to a person in _HelloID_.
 
 | Setting                   | Value                                     |
-| ------------------------- | ----------------------------------------- |
+|---------------------------|-------------------------------------------|
 | Enable correlation        | `True`                                    |
 | Person correlation field  | `Accounts.<yourSystem>.userPrinicpalName` |
 | Account correlation field | `userPrinicpalName`                       |
@@ -137,7 +137,7 @@ The correlation configuration is used to specify which properties will be used t
 The following lifecycle actions are available:
 
 | Action                                      | Description                                                                                      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+|---------------------------------------------|--------------------------------------------------------------------------------------------------|
 | correlateOnly - create.ps1                  | Correlate to an account                                                                          |
 | create.ps1                                  | Correlate account and sets Hide from address list to mapped value (default true), only if mapped |
 | delete.ps1                                  | Set mailbox auto reply configuration (only when none is configured)                              |
@@ -181,7 +181,7 @@ Added enhanced functionality to update **EmailAddresses (proxy addresses)**. The
 The following endpoints are used by the connector
 
 | Endpoint                          | Description                                   |
-| --------------------------------- | --------------------------------------------- |
+|-----------------------------------|-----------------------------------------------|
 | Get-EXOMailbox                    | Get a mailbox                                 |
 | Set-Mailbox                       | Set a mailbox                                 |
 | Add-MailboxPermission             | Add a mailbox to a permission                 |

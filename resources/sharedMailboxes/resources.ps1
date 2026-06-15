@@ -7,6 +7,11 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Define correlation and marker fields
+$correlationField = "CustomAttribute1"
+$markerField = "CustomAttribute2"
+$markerValue = "HelloID Dynamic Shared Mailbox"
+
 # Determine all the sub-permissions that needs to be Granted/Updated/Revoked
 $currentPermissions = @{ }
 foreach ($permission in $actionContext.CurrentPermissions) {
@@ -120,9 +125,6 @@ function Get-MSEntraCertificate {
 }
 #endregion functions
 
-# Define correlation field
-$correlationField = "CustomAttribute1"
-
 #region Get Access Token
 try {
     #region Import module
@@ -227,7 +229,7 @@ try {
     $actionMessage = "querying Microsoft Exchange Online Shared Mailboxes"
     
     $getMicrosoftExchangeOnlineSharedMailboxesSplatParams = @{
-        Properties           = (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
+        Properties           = (@("Guid", "DisplayName", $correlationField, $markerField) | Select-Object -Unique)
         RecipientTypeDetails = "SharedMailbox"
         ResultSize           = "Unlimited"
         Verbose              = $false
@@ -236,7 +238,7 @@ try {
 
     $getMicrosoftExchangeOnlineSharedMailboxesResponse = $null
     $getMicrosoftExchangeOnlineSharedMailboxesResponse = Get-EXORecipient @getMicrosoftExchangeOnlineSharedMailboxesSplatParams
-    $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
+    $microsoftExchangeOnlineSharedMailboxes = $getMicrosoftExchangeOnlineSharedMailboxesResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField, $markerField) | Select-Object -Unique)
 
     Write-Information "Queried Microsoft Exchange Online Shared Mailboxes. Result count: $(($microsoftExchangeOnlineSharedMailboxes | Measure-Object).Count)"
     #endregion Get Shared Mailboxes
@@ -256,6 +258,10 @@ try {
         $actionMessage = "querying shared mailbox for resource: $($resource | ConvertTo-Json)"
  
         $correlationValue = $resource.ExternalId
+        if ($correlationField -eq "DisplayName") {
+            # Keep correlation value aligned with mailbox display name in DisplayName mode.
+            $correlationValue = "smb_$($resource.DisplayName)"
+        }
 
         $correlatedResource = $null
         if (($microsoftExchangeOnlineSharedMailboxesGrouped | Measure-Object).Count -gt 0) {
@@ -282,7 +288,7 @@ try {
                 $createSharedMailboxSplatParams = @{
                     Shared             = $true
                     Name               = "smb_$($resource.DisplayName)"
-                    PrimarySmtpAddress = "smb_$(Get-SanitizedGroupName $resource.DisplayName)@schoutenenzn.nl"
+                    PrimarySmtpAddress = "smb_$(Get-SanitizedGroupName $resource.DisplayName)@$($actionContext.Configuration.Organization)"
                     Verbose            = $false
                     ErrorAction        = "Stop"
                 }
@@ -311,6 +317,7 @@ try {
                 $updateSharedMailboxSplatParams = @{
                     Identity          = $createSharedMailboxResponse.Guid 
                     $correlationField = $correlationValue
+                    $markerField      = $markerValue
                     Verbose           = $false
                     ErrorAction       = "Stop"
                 }
@@ -322,12 +329,12 @@ try {
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             # Action  = "" # Optional
-                            Message = "Updated [$correlationField] with [$correlationValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                            Message = "Updated [$correlationField] with [$correlationValue] and [$markerField] with [$markerValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                             IsError = $false
                         })
                 }
                 else {
-                    Write-Warning "DryRun: Would [$correlationField] with [$correlationValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
+                    Write-Warning "DryRun: Would update [$correlationField] with [$correlationValue] and [$markerField] with [$markerValue] for created shared mailbox with id [$($createSharedMailboxResponse.Guid)] for resource: $($resource | ConvertTo-Json)."
                 }
                 #endregion Update shared mailbox
 
