@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. The format 
 - Added `importPermission.ps1` and `importSubPermissions.ps1` scripts for Shared Mailboxes (legacy and new separate entitlements)
 - Added dynamic permissions support for the new Shared Mailboxes separate entitlements implementation
 - Added marker fields in resource scripts to support reliable permission imports
+- New workflow files
 
 ### Changed
 - Minor improvements and refinements
