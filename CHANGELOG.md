@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.2] - 03-08-2026
+
+### Added
+- Import script at `correlateOnly` folder
+
 ## [3.2.1] - 15-06-2026
 
 ### Added
