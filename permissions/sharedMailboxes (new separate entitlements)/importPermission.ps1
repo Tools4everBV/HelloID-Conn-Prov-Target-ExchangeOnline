@@ -7,6 +7,14 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Define PowerShell commands to import
+$commands = @(
+    "Get-User",
+    "Get-EXOMailbox",
+    "Get-EXOMailboxPermission",
+    "Get-EXORecipientPermission"
+)
+
 #region functions
 function Resolve-ExchangeOnlineError {
     [CmdletBinding()]
@@ -80,7 +88,7 @@ try {
     $actionMessage = "importing module [ExchangeOnlineManagement]"
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = 'Get-User,Get-Mailbox,Get-EXOMailbox,Get-EXOMailboxPermission,Get-EXORecipientPermission'
+        Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
@@ -160,40 +168,38 @@ try {
         Write-Information "Connected to Microsoft Exchange Online"
     }
 
-# Docs: https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailbox?view=exchange-ps
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailbox?view=exchange-ps
+    $actionMessage = "getting user mailboxes from Microsoft Exchange Online"
+    $getUserMailboxesParams = @{
+        RecipientTypeDetails = 'UserMailbox'
+        ResultSize           = 'Unlimited'
+        Properties           = 'GrantSendOnBehalfTo'
+        ErrorAction          = 'Stop'
+    }
 
-$actionMessage = "getting user mailboxes from Microsoft Exchange Online"
-$getUserMailboxesParams = @{
-    RecipientTypeDetails = 'UserMailbox'
-    ResultSize            = 'Unlimited'
-    Properties            = 'GrantSendOnBehalfTo'
-    ErrorAction           = 'Stop'
-}
+    $userMailboxes = Get-EXOMailbox @getUserMailboxesParams | Select-Object Guid, Name, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
 
-$userMailboxes = Get-EXOMailbox @getUserMailboxesParams |
-     Select-Object Guid, Name, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
+    $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
+    $userMailboxesGuidGrouped = $userMailboxes | Group-Object -Property 'Guid' -AsHashTable -AsString
+    $userMailboxesNameGrouped = $userMailboxes | Group-Object -Property 'Name' -AsHashTable -AsString
 
-$userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
-$userMailboxesGuidGrouped = $userMailboxes | Group-Object -Property 'Guid' -AsHashTable -AsString
-$userMailboxesNameGrouped = $userMailboxes | Group-Object -Property 'Name' -AsHashTable -AsString
+    Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
 
-Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
+    # Cleanup for memory
+    $userMailboxes = $null
 
-$actionMessage = "getting shared mailboxes from Microsoft Exchange Online"
-$getSharedMailboxesParams = @{
-    RecipientTypeDetails = 'SharedMailbox'
-    ResultSize            = 'Unlimited'
-    Properties            = 'GrantSendOnBehalfTo'
-    ErrorAction           = 'Stop'
-}
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailbox?view=exchange-ps
+    $actionMessage = "getting shared mailboxes from Microsoft Exchange Online"
+    $getSharedMailboxesParams = @{
+        RecipientTypeDetails = 'SharedMailbox'
+        ResultSize           = 'Unlimited'
+        Properties           = 'GrantSendOnBehalfTo'
+        ErrorAction          = 'Stop'
+    }
 
-$sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams |
-    Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
+    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
 
-Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
-
-# Cleanup for memory
-$userMailboxes = $null
+    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
 
     # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/get-recipientpermission?view=exchange-ps
     $actionMessage = "getting all recipient permissions from Microsoft Exchange Online"
@@ -222,6 +228,7 @@ $userMailboxes = $null
             if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }
         }
         $numberOfAccounts = $fullAccessUsers.Count
+        $numberOfFullAccess += $numberOfAccounts
         $permission = @{
             PermissionReference = @{
                 Id         = $sharedMailbox.Guid
@@ -251,6 +258,7 @@ $userMailboxes = $null
             }
         }
         $numberOfAccounts = $sendAsUsers.Count
+        $numberOfSendAs += $numberOfAccounts
         $permission = @{
             PermissionReference = @{
                 Id         = $sharedMailbox.Guid
@@ -301,6 +309,7 @@ $userMailboxes = $null
             }
         }
         $numberOfAccounts = $sendOnBehalfUsers.Count
+        $numberOfSendOnBehalf += $numberOfAccounts
         $permission = @{
             PermissionReference = @{
                 Id         = $sharedMailbox.Guid
@@ -320,7 +329,7 @@ $userMailboxes = $null
             }
         }
     }
-    Write-Information 'Target permission import for shared mailboxes is completed'
+    Write-Information "Target permission import for shared mailboxes completed. Full Access: [$numberOfFullAccess] | Send As: [$numberOfSendAs] | Send on Behalf: [$numberOfSendOnBehalf]"
 }
 catch {
     $ex = $PSItem

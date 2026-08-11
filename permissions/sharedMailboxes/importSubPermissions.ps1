@@ -22,8 +22,10 @@ $filterValue = 'HelloID Dynamic Shared Mailbox'
 
 # PowerShell commands to import
 $commands = @(
-    'Get-Mailbox'
-    , 'Get-EXOMailboxPermission'
+    "Get-User",
+    "Get-EXOMailbox",
+    "Get-EXOMailboxPermission",
+    "Get-EXORecipientPermission"
 )
 
 #region functions
@@ -159,7 +161,7 @@ try {
             ErrorAction     = 'Stop'
         }
 
-        $createAccessTokenResonse = Invoke-RestMethod @createAccessTokenSplatParams
+        $createAccessTokenResponse = Invoke-RestMethod @createAccessTokenSplatParams
 
         Write-Information 'Created access token.'
 
@@ -169,7 +171,7 @@ try {
         $createExchangeSessionSplatParams = @{
             Organization          = $actionContext.Configuration.Organization
             AppID                 = $actionContext.Configuration.AppId
-            AccessToken           = $createAccessTokenResonse.access_token
+            AccessToken           = $createAccessTokenResponse.access_token
             CommandName           = $commands
             ShowBanner            = $false
             ShowProgress          = $false
@@ -184,28 +186,47 @@ try {
         Write-Information 'Connected to Microsoft Exchange Online'
     }
 
-    $actionMessage = 'getting all shared mailboxes from Microsoft Exchange Online'
-    
-    $getAllMailboxesParams = @{
-        ResultSize  = 'Unlimited'
-        ErrorAction = 'Stop'
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailbox?view=exchange-ps
+    $actionMessage = "getting user mailboxes from Microsoft Exchange Online"
+    $getUserMailboxesParams = @{
+        RecipientTypeDetails = 'UserMailbox'
+        ResultSize           = 'Unlimited'
+        Properties           = 'GrantSendOnBehalfTo'
+        ErrorAction          = 'Stop'
     }
-    
-    $mailboxes = Get-Mailbox @getAllMailboxesParams
-    $userMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' } | Select-Object Guid, Name, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
+
+    $userMailboxes = Get-EXOMailbox @getUserMailboxesParams | Select-Object Guid, Name, UserPrincipalName, ExternalDirectoryObjectId, GrantSendOnBehalfTo
+
     $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
     $userMailboxesGuidGrouped = $userMailboxes | Group-Object -Property 'Guid' -AsHashTable -AsString
     $userMailboxesNameGrouped = $userMailboxes | Group-Object -Property 'Name' -AsHashTable -AsString
     Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
-    $sharedMailboxes = $mailboxes | Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' } | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo, CustomAttribute2
 
-    $sharedMailboxes = $sharedMailboxes | Where-Object { $_.$filterField -like "$filterValue*" }
-
-
-    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes matching filter [$filterField = $filterValue]"
     # Cleanup for memory
     $userMailboxes = $null
-    $mailboxes = $null
+
+    # Docs: https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailbox?view=exchange-ps
+    $actionMessage = "getting shared mailboxes from Microsoft Exchange Online"
+    $getSharedMailboxesParams = @{
+        RecipientTypeDetails = 'SharedMailbox'
+        ResultSize           = 'Unlimited'
+        Properties           = 'GrantSendOnBehalfTo'
+        ErrorAction          = 'Stop'
+    }
+
+    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
+
+    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
+    
+    # Filter shared mailboxes with the matching filter criteria
+    if ($filterField -eq 'DisplayName') {
+        $sharedMailboxes = $sharedMailboxes | Where-Object { $_.DisplayName -like "$filterValue*" }
+    }
+    else {
+        $sharedMailboxes = $sharedMailboxes | Where-Object { $_.$filterField -eq $filterValue }
+    }
+    
+    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes matching filter [$filterField = $filterValue]"
 
     $actionMessage = "getting all recipient permissions from Microsoft Exchange Online"
     $getAllRecipientPermissionsParams = @{
@@ -239,6 +260,7 @@ try {
         }
         
         $numberOfAccounts = $fullAccessUsers.Count
+        $numberOfFullAccess += $numberOfAccounts
         
         $permission = @{
             PermissionReference      = @{
@@ -273,6 +295,7 @@ try {
         }
 
         $numberOfAccounts = $sendAsUsers.Count
+        $numberOfSendAs += $numberOfAccounts
 
         $permission = @{
             PermissionReference      = @{
@@ -324,6 +347,7 @@ try {
         }
 
         $numberOfAccounts = $sendOnBehalfUsers.Count
+        $numberOfSendOnBehalf += $numberOfAccounts
 
         $permission = @{
             PermissionReference      = @{
@@ -345,7 +369,7 @@ try {
         }
     }
 
-    Write-Information 'Exchange Online shared mailbox permission entitlement import completed'
+    Write-Information "Target permission import for shared mailboxes completed. Full Access: [$numberOfFullAccess] | Send As: [$numberOfSendAs] | Send on Behalf: [$numberOfSendOnBehalf]"
 }
 catch {
     $ex = $PSItem
