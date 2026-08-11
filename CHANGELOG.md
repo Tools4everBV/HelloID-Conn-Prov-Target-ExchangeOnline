@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.2.3] - 10-08-2026
+
+### Changed
+- Updated the sharedMailboxes import scripts:
+	- Prevent pagination errors that can occur with `Get-Mailbox -ResultSize Unlimited`:
+	- Use `Get-EXOMailbox` instead of `Get-Mailbox` when retrieving user and shared mailboxes.
+	- In the sharedMailboxes import scripts, retrieve user and shared mailboxes separately by filtering on `RecipientTypeDetails`.
+	- Add `GrantSendOnBehalfTo` to the requested EXO mailbox properties.
+
 ## [3.2.2] - 03-08-2026
 
 ### Added
