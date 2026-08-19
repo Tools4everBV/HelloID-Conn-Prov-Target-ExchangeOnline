@@ -8,7 +8,7 @@ $outputContext.Permissions.Add(
     @{
         DisplayName    = "Mailbox Regional Configuration - NL"
         Identification = @{
-            Id                        = "MailboxRegionalConfiguration-NL"
+            Id = "MailboxRegionalConfiguration-NL"
         }
     }
 )

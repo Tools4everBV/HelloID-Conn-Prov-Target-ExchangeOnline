@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.3.0] - 19-08-2026
+
+### Removed
+- Removed Client Secret support from the repository. Make sure to also update `configuration.json` when updating the connector.
+
 ## [3.2.3] - 10-08-2026
 
 ### Changed
