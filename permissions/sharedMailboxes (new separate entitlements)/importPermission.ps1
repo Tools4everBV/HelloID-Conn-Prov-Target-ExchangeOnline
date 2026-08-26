@@ -249,9 +249,9 @@ try {
                 }
 
                 if (-not $sendOnBehalfUser) {
-                    $resolvedTrustee = Get-Mailbox -Identity $trusteeValue -ErrorAction SilentlyContinue | Select-Object -First 1 -Property Guid
-                    if ($resolvedTrustee.Guid) {
-                        $sendOnBehalfUser = $resolvedTrustee.Guid
+                    $resolvedGuid = Get-EXOMailbox -Identity $trusteeValue -RecipientTypeDetails UserMailbox -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Guid
+                    if ($resolvedGuid) {
+                        $sendOnBehalfUser = [string]$resolvedGuid
                     }
                 }
 

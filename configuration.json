@@ -41,7 +41,7 @@
       "type": "password",
       "placeholder": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg==",
       "description": "",
-      "required": false
+      "required": true
     }
   },
   {
@@ -53,7 +53,7 @@
       "type": "password",
       "placeholder": "P@ssw0rd!",
       "description": "",
-      "required": false
+      "required": true
     }
   }
 ]
