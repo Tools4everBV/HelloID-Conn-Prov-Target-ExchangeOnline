@@ -122,66 +122,24 @@ try {
     Write-Information "Imported module [ExchangeOnlineManagement]"
     #endregion Import module
 
-    if ($actionContext.Configuration.UseCertificate -eq $true) {
-        Write-Information "Connecting to Exchange Online with certificate"
-        $actionMessage = "retrieving certificate"
-        $certificate = Get-MSEntraCertificate
+    $actionMessage = "retrieving certificate"
+    $certificate = Get-MSEntraCertificate
 
-        $actionMessage = "connecting to Microsoft Exchange Online"
-        $createExchangeSessionSplatParams = @{
-            Organization          = $actionContext.Configuration.Organization
-            AppID                 = $actionContext.Configuration.AppId
-            Certificate           = $certificate
-            CommandName           = $commands
-            ShowBanner            = $false
-            ShowProgress          = $false
-            TrackPerformance      = $false
-            SkipLoadingCmdletHelp = $true
-            SkipLoadingFormatData = $true
-            ErrorAction           = "Stop"
-        }
-        $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        Write-Information "Connected to Microsoft Exchange Online"
+    $actionMessage = "connecting to Microsoft Exchange Online"
+    $createExchangeSessionSplatParams = @{
+        Organization          = $actionContext.Configuration.Organization
+        AppID                 = $actionContext.Configuration.AppId
+        Certificate           = $certificate
+        CommandName           = $commands
+        ShowBanner            = $false
+        ShowProgress          = $false
+        TrackPerformance      = $false
+        SkipLoadingCmdletHelp = $true
+        SkipLoadingFormatData = $true
+        ErrorAction           = "Stop"
     }
-    else {
-        Write-Information "Connecting to Exchange Online with secret"
-        $actionMessage = "creating access token"
-        
-        $createAccessTokenBody = @{
-            grant_type    = "client_credentials"
-            client_id     = $actionContext.Configuration.AppId
-            client_secret = $actionContext.Configuration.AppSecret
-            resource      = "https://outlook.office365.com"
-        }
-        $createAccessTokenSplatParams = @{
-            Uri             = "https://login.microsoftonline.com/$($actionContext.Configuration.TenantID)/oauth2/token"
-            Headers         = $headers
-            Method          = "POST"
-            ContentType     = "application/x-www-form-urlencoded"
-            UseBasicParsing = $true
-            Body            = $createAccessTokenBody
-            Verbose         = $false
-            ErrorAction     = "Stop"
-        }
-        $createAccessTokenResponse = Invoke-RestMethod @createAccessTokenSplatParams
-        Write-Information "Created access token."
-
-        $actionMessage = "connecting to Microsoft Exchange Online"
-        $createExchangeSessionSplatParams = @{
-            Organization          = $actionContext.Configuration.Organization
-            AppID                 = $actionContext.Configuration.AppId
-            AccessToken           = $createAccessTokenResponse.access_token
-            CommandName           = $commands
-            ShowBanner            = $false
-            ShowProgress          = $false
-            TrackPerformance      = $false
-            SkipLoadingCmdletHelp = $true
-            SkipLoadingFormatData = $true
-            ErrorAction           = "Stop"
-        }
-        $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
-        Write-Information "Connected to Microsoft Exchange Online"
-    }
+    $null = Connect-ExchangeOnline @createExchangeSessionSplatParams
+    Write-Information "Connected to Microsoft Exchange Online"
 
     #region Define desired permissions
     $actionMessage = "calculating desired permission for type [$permissionType]"
