@@ -37,7 +37,7 @@
 | **Account Lifecycle**               | ✅         | Create, Update, Enable, Disable, Delete | Create is for correlating, Enable/Disable for hidefromaddresslist, update for editing mailbox attributes and delete for out of office messages |
 | **Permissions**                     | ✅         | Retrieve, Grant, Revoke                 | Groups, shared mailboxes, folder permissions, litigation hold, regional configuration                                                          |
 | **Resources**                       | ✅         | -                                       | For groups and shared mailboxes                                                                                                                |
-| **Entitlement Import: Accounts**    | ✅         | -                                       |                                                                                                                                                |
+| **Entitlement Import: Accounts**    | ✅         | -                                       | The correlation attribute must also be set in this script. The default value is `employeeId`                                                                                                                                               |
 | **Entitlement Import: Permissions** | ✅         | -                                       | Only for the shared mailboxes and groups scripts. ⚠️Warning the new shared mailbox scripts are not backwards compatible!⚠️                       |
 
 ## Introduction
@@ -72,9 +72,8 @@ Once you have completed the Microsoft setup and followed their best practices, c
    - Create an **App Registration** in Microsoft Entra ID.
    - Add API permissions for your app:
      - **Application permissions**:
-       - From the **Request API Permissions** screen click `Office 365 Exchange Online`.
-          > _The Office 365 Exchange Online might not be a selectable API. In this case, select "APIs my organization uses" and search here for "Office 365 Exchange Online"_
        - `Exchange.ManageAsApp`: Manage Exchange As Application.
+       - `User.Read.All`: Application permissions ⚠️ This is not the default `User.Read` type `Delegated` ⚠️
    - **Certificate:**
        - Upload the public key file (.cer) in Entra ID.
 4. **Assign Entra ID roles to the application**:
@@ -116,11 +115,15 @@ The following settings are required to connect.
 
 The correlation configuration is used to specify which properties will be used to match an existing account within _Exchange Online_ to a person in _HelloID_.
 
-| Setting                   | Value                                     |
-| ------------------------- | ----------------------------------------- |
-| Enable correlation        | `True`                                    |
-| Person correlation field  | `Accounts.<yourSystem>.userPrinicpalName` |
-| Account correlation field | `userPrinicpalName`                       |
+| Setting                   | Value                             |
+| ------------------------- | --------------------------------- |
+| Enable correlation        | `True`                            |
+| Person correlation field  | `PersonContext.Person.ExternalId` |
+| Account correlation field | `employeeId`                      |
+
+> [!NOTE]
+> HelloID will also queries the Entra ID user. This way its possible to use Entra ID attributes to correlate the accounts. 
+> **The import account script also needs to be updated if `employeeId` is not you're correlation field.**
 
 > [!TIP]
 > _For more information on correlation, please refer to our correlation [documentation](https://docs.helloid.com/en/provisioning/target-systems/powershell-v2-target-systems/correlation.html) pages_.

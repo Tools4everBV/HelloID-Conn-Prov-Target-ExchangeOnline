@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.4.0] - 19-10-2026
+
+### Added
+- Added Microsoft Graph integration using the existing certificate authentication to retrieve Entra ID users.
+- Added Entra ID personnel numbers (`employeeId`) to account imports in `import.ps1` and `correlateOnly/import.ps1`, including pagination of Entra ID users.
+
+### Changed
+- Updated `create.ps1` and `correlateOnly/create.ps1` to correlate against Entra ID user attributes, including `onPremisesExtensionAttributes`, and find the mailbox by `ExternalDirectoryObjectId`.
+- Updated account imports to match mailboxes to Entra ID users by `ExternalDirectoryObjectId`, while retaining the mailbox `Guid` as the account reference.
+- Updated the README with Entra ID correlation and account import configuration. The app registration now also requires the Microsoft Graph application permission `User.Read.All` with admin consent.
+
 ## [3.3.0] - 19-08-2026
 
 ### Fixed

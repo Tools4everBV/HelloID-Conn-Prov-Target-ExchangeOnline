@@ -19,6 +19,22 @@
     },
     {
       "Name": "UserPrincipalName",
+      "Description": "[Required] for correlation (employeeId is recommended)",
+      "Type": "Text",
+      "MappingActions": [
+        {
+          "MapForActions": [
+            "Create"
+          ],
+          "MappingMode": "None",
+          "Value": "\"\"",
+          "UsedInNotifications": false,
+          "StoreInAccountData": false
+        }
+      ]
+    },
+    {
+      "Name": "employeeId",
       "Description": "[Required] for correlation",
       "Type": "Text",
       "MappingActions": [
