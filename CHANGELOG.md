@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.4.1] - 03-11-2026
+
+### Fixed
+- Improved function for certificate based connection to Entra ID.
+
 ## [3.4.0] - 19-10-2026
 
 ### Added
