@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [3.5.0] - 09-11-2026
+
+### Added
+- Added out of office permission (`permissions/outOfOffice`): grant disables the out of office reply, revoke enables it with a configurable message.
+
 ## [3.4.1] - 03-11-2026
 
 ### Fixed
