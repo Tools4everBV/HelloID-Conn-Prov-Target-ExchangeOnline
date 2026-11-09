@@ -132,14 +132,18 @@ function Get-MSEntraAccessToken {
             'jti' = [Guid]::NewGuid().ToString()
         } | ConvertTo-Json
         $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
-     
+
         try {
             $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($Certificate)
         }
         catch {
-            throw "Unable to access the private key of certificate [$($Certificate.Thumbprint)]. Verify that the account running the agent has read permissions on the private key. Error: $($_.Exception.Message)"
+            throw "Unable to access the private key of certificate [$($Certificate.Thumbprint)]. Error: $($_.Exception.Message)"
         }
-       
+
+        if ($null -eq $rsa) {
+            throw "The certificate [$($Certificate.Thumbprint)] does not have a private key."
+        }
+
         # Sign the JWT
         $signatureInput = "$base64Header.$base64Payload"
         $signature = $rsa.SignData(
