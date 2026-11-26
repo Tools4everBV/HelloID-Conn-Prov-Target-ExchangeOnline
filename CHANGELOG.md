@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file. The format 
 - Error messages in the audit log are readable (`message Error code: code`) instead of raw JSON (`Resolve-ExchangeOnlineError` parsed the wrong object).
 - The same error parsing fix is applied to the out of office permission scripts.
 - Counts in log lines are correct for a single object in Windows PowerShell 5.1.
+- `importSubPermissions.ps1` for shared mailboxes (both variants): the filter field (default `CustomAttribute2`) was not retrieved from Exchange, so the default filter never matched and nothing was imported. The filter field is now requested and selected.
 - README fully updated: features, lifecycle actions (imports, sub permissions, out of office, regional configuration, new separate entitlements), module requirements (Windows PowerShell 5.1, install for all users), certificate-based authentication, correlation and the used commands.
 
 ## [3.5.0] - 09-11-2026

@@ -162,11 +162,12 @@ try {
     $getSharedMailboxesParams = @{
         RecipientTypeDetails = 'SharedMailbox'
         ResultSize           = 'Unlimited'
-        Properties           = 'GrantSendOnBehalfTo'
+        # The filter field must be requested (and selected below), otherwise the filter never matches
+        Properties           = (@('GrantSendOnBehalfTo', $filterField) | Select-Object -Unique)
         ErrorAction          = 'Stop'
     }
 
-    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
+    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object -Property (@('DisplayName', 'Name', 'Guid', 'UserPrincipalName', 'GrantSendOnBehalfTo', $filterField) | Select-Object -Unique)
 
     Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
     
