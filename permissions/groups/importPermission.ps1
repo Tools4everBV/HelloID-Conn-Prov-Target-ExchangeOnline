@@ -7,6 +7,14 @@
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+# Define PowerShell commands to import
+$commands = @(
+    "Get-User",
+    "Get-Mailbox",
+    "Get-DistributionGroup",
+    "Get-DistributionGroupMember"
+)
+
 #region functions
 function Resolve-ExchangeOnlineError {
     [CmdletBinding()]
@@ -34,7 +42,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -51,7 +59,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -81,7 +89,7 @@ try {
     $actionMessage = "importing module [ExchangeOnlineManagement]"
     $importModuleSplatParams = @{
         Name        = "ExchangeOnlineManagement"
-        Cmdlet      = 'Get-User,Get-Mailbox,Get-DistributionGroup,Get-DistributionGroupMember'
+        Cmdlet      = $commands
         Verbose     = $false
         ErrorAction = "Stop"
     }
@@ -119,28 +127,28 @@ try {
         ErrorAction = 'Stop'
     }
     $getDistributionGroups = Get-DistributionGroup @getAllDistributionGroupsParams
-    $distributionGroups = $getDistributionGroups | Select-Object Guid, DisplayName, RecipientTypeDetails, Description
-    Write-Information "Successfully queried [$($distributionGroups.count)] distribution groups"
+    $distributionGroups = $getDistributionGroups | Select-Object ExchangeObjectId, DisplayName, RecipientTypeDetails, Description
+    Write-Information "Successfully queried [$(@($distributionGroups | Where-Object { $null -ne $_ }).Count)] distribution groups"
     # Cleanup for memory
     $getDistributionGroups = $null
 
     foreach ($distributionGroup in $distributionGroups) {
         $getDistributionGroupMembersParams = @{
-            Identity    = $distributionGroup.Guid
+            Identity    = $distributionGroup.ExchangeObjectId
             ResultSize  = 'Unlimited'
             ErrorAction = 'Stop'
         }
         $groupMemberResponse = Get-DistributionGroupMember @getDistributionGroupMembersParams
         $userMailboxGroupMembers = $groupMemberResponse | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' }
         $distributionGroupMembers = @()
-        $distributionGroupMembers = ($userMailboxGroupMembers).guid
+        $distributionGroupMembers = @(($userMailboxGroupMembers).guid | Where-Object { $null -ne $_ })
         
         # Make sure the displayname has a value of max 100 char
         if (-not([string]::IsNullOrEmpty($distributionGroup.DisplayName))) {
             $displayname = $($distributionGroup.DisplayName).substring(0, [System.Math]::Min(100, $($distributionGroup.DisplayName).Length))
         }
         else {
-            $displayname = $distributionGroup.guid
+            $displayname = $distributionGroup.ExchangeObjectId
         }
 
         if ($distributionGroup.RecipientTypeDetails -eq 'MailUniversalSecurityGroup') {
@@ -161,7 +169,7 @@ try {
         $numberOfAccounts = $distributionGroupMembers.Count
         $permission = @{
             PermissionReference = @{
-                Id = $distributionGroup.Guid
+                Id = $distributionGroup.ExchangeObjectId
             }       
             Description         = $description
             DisplayName         = $displayname
@@ -172,8 +180,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })
+                Write-Output $chunk
             }
         }
     }

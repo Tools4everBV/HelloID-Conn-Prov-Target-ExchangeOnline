@@ -53,7 +53,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -70,7 +70,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -145,7 +145,7 @@ try {
     }
 
     $getDistributionGroups = Get-DistributionGroup @getAllDistributionGroupsParams
-    $distributionGroups = $getDistributionGroups | Select-Object -Property Guid, DisplayName, RecipientTypeDetails
+    $distributionGroups = $getDistributionGroups | Select-Object -Property ExchangeObjectId, DisplayName, RecipientTypeDetails
 
     Write-Information "Queried Exchange Online groups where [$groupFilter]. Result count: $(($distributionGroups | Measure-Object).Count)"
 
@@ -155,7 +155,7 @@ try {
     $actionMessage = 'querying group members'
     foreach ($distributionGroup in $distributionGroups) {
         $getDistributionGroupMembersParams = @{
-            Identity    = $distributionGroup.Guid
+            Identity    = $distributionGroup.ExchangeObjectId
             ResultSize  = 'Unlimited'
             Verbose     = $false
             ErrorAction = 'Stop'
@@ -164,7 +164,7 @@ try {
         $groupMemberResponse = Get-DistributionGroupMember @getDistributionGroupMembersParams
         $userMailboxGroupMembers = $groupMemberResponse | Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' }
         $distributionGroupMembers = @()
-        $distributionGroupMembers = ($userMailboxGroupMembers).guid
+        $distributionGroupMembers = @(($userMailboxGroupMembers).guid | Where-Object { $null -ne $_ })
         $numberOfAccounts = $distributionGroupMembers.Count
 
         # Make sure the displayname has a value of max 100 char
@@ -189,7 +189,7 @@ try {
             }
             DisplayName              = "Permission - $permissionDisplayName"
             SubPermissionReference   = @{
-                Id = $distributionGroup.Guid
+                Id = $distributionGroup.ExchangeObjectId
             }
             SubPermissionDisplayName = $displayname
         }
@@ -200,8 +200,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($distributionGroupMembers[$_]) })
+                Write-Output $chunk
             }
         }
     }

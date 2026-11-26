@@ -40,7 +40,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -57,7 +57,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -130,13 +130,14 @@ try {
 
     $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams = @{
         Filter      = "RecipientTypeDetails -eq 'MailUniversalSecurityGroup' -and IsDirSynced -eq 'False'"
+        ResultSize  = "Unlimited"
         Verbose     = $false
         ErrorAction = "Stop"
     }
 
     $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse = $null
     $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse = Get-DistributionGroup @getMicrosoftExchangeOnlineMailEnabledSecurityGroupsSplatParams
-    $microsoftExchangeOnlineMailEnabledSecurityGroups = $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse | Select-Object Guid, DisplayName
+    $microsoftExchangeOnlineMailEnabledSecurityGroups = $getMicrosoftExchangeOnlineMailEnabledSecurityGroupsresponse | Select-Object ExchangeObjectId, DisplayName
 
     Write-Information "Queried Microsoft Mail-enabled Security Groups. Result count: $(($microsoftExchangeOnlineMailEnabledSecurityGroups | Measure-Object).Count)"
     #endregion Get Microsoft Mail-enabled Security Groups
@@ -151,7 +152,7 @@ try {
             @{
                 displayName    = $displayName
                 identification = @{
-                    Id = $_.Guid
+                    Id = $_.ExchangeObjectId
                 }
             }
         )
@@ -171,7 +172,7 @@ try {
 
     $getMicrosoftExchangeOnlineDistributionGroupsResponse = $null
     $getMicrosoftExchangeOnlineDistributionGroupsResponse = Get-DistributionGroup @getMicrosoftExchangeOnlineDistributionGroupsSplatParams
-    $microsoftExchangeOnlineDistributionGroups = $getMicrosoftExchangeOnlineDistributionGroupsResponse | Select-Object Guid, DisplayName
+    $microsoftExchangeOnlineDistributionGroups = $getMicrosoftExchangeOnlineDistributionGroupsResponse | Select-Object ExchangeObjectId, DisplayName
 
 
     Write-Information "Queried Microsoft Distribution Groups. Result count: $(($microsoftExchangeOnlineDistributionGroups | Measure-Object).Count)"
@@ -187,7 +188,7 @@ try {
             @{
                 displayName    = $displayName
                 identification = @{
-                    Id = $_.Guid
+                    Id = $_.ExchangeObjectId
                 }
             }
         )

@@ -23,6 +23,7 @@
     - [Correlation configuration](#correlation-configuration)
     - [Available lifecycle actions](#available-lifecycle-actions)
     - [Field mapping](#field-mapping)
+  - [Upgrade notes for v4.0.0](#upgrade-notes-for-v400)
   - [Remarks](#remarks)
   - [Development resources](#development-resources)
     - [API endpoints](#api-endpoints)
@@ -169,6 +170,17 @@ The following lifecycle actions are available:
 ### Field mapping
 
 The field mapping can be imported by using the _fieldMapping.json_ file.
+
+## Upgrade notes for v4.0.0
+
+> [!WARNING]
+> **Version 4.0.0 contains a breaking change.** Groups (distribution groups and mail-enabled security groups) are now referenced by their `ExchangeObjectId` instead of their `Guid`.
+>
+> - In practice the `ExchangeObjectId` and `Guid` of a group are the same value, so existing entitlements and sub permissions keep working. Verify this in your own tenant before upgrading: compare both properties with `Get-DistributionGroup | Select-Object Guid, ExchangeObjectId`.
+> - `grantPermission.ps1`, `revokePermission.ps1` and the sub permissions accept both values.
+> - Update all group scripts together (`permissions/groups`, `resources/groups`) so that the listing, imports and grant/revoke use the same reference.
+> - Shared mailbox SendAs permissions are retrieved per shared mailbox on the `Guid`. For tenants with many shared mailboxes the import takes longer than before.
+> - The scripts are tested with the _ExchangeOnlineManagement_ module in Windows PowerShell 5.1 (the HelloID agent).
 
 ## Remarks
 
