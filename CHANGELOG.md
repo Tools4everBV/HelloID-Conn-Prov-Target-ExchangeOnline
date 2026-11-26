@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 - Added out of office permission (`permissions/outOfOffice`): grant disables the out of office reply, revoke enables it with a configurable message.
 
+### Changed
+- Added the HelloID Icon URL to the README.
+
 ## [3.4.1] - 03-11-2026
 
 ### Fixed
