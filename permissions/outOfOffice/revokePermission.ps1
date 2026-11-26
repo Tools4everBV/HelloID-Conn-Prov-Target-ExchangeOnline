@@ -39,7 +39,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description

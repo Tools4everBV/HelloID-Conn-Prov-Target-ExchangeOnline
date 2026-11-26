@@ -18,6 +18,30 @@ $commands = @(
 )
 
 #region functions
+function Test-ExchangePermissionAlreadyGiven {
+    # True when Exchange Online reports that the user already has the permission (grant = success, nothing to do)
+    param(
+        [Parameter(Mandatory)]
+        [object]
+        $ErrorObject
+    )
+    $reason = "$($ErrorObject.CategoryInfo.Reason)"
+    $message = "$($ErrorObject.Exception.Message)"
+    return ($reason -like '*AlreadyExists*' -or $message -like '*already has*' -or $message -like '*already exists*' -or $message -like '*already a member*')
+}
+
+function Test-ExchangePermissionAlreadyRemoved {
+    # True when Exchange Online reports that the user no longer has the permission (revoke = skipped, nothing to do)
+    param(
+        [Parameter(Mandatory)]
+        [object]
+        $ErrorObject
+    )
+    $reason = "$($ErrorObject.CategoryInfo.Reason)"
+    $message = "$($ErrorObject.Exception.Message)"
+    return ($reason -like '*NotFound*' -or $message -like "*doesn't have*" -or $message -like '*does not have*' -or $message -like '*no longer has*' -or $message -like "*isn't a member*")
+}
+
 function Resolve-ExchangeOnlineError {
     [CmdletBinding()]
     param (
@@ -44,7 +68,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -61,7 +85,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -211,6 +235,12 @@ try {
                                 IsError = $false
                             })
                     }
+                    elseif (Test-ExchangePermissionAlreadyRemoved -ErrorObject $ex) {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Message = "Skipped $($actionMessage). Reason: Account no longer has the permission."
+                                IsError = $false
+                            })
+                    }
                     else {
                         Write-Warning $warningMessage
                         throw $auditMessage
@@ -289,6 +319,12 @@ try {
                                 IsError = $false
                             })
                     }
+                    elseif (Test-ExchangePermissionAlreadyRemoved -ErrorObject $ex) {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Message = "Skipped $($actionMessage). Reason: Account no longer has the permission."
+                                IsError = $false
+                            })
+                    }
                     else {
                         Write-Warning $warningMessage
                         throw $auditMessage
@@ -363,6 +399,12 @@ try {
                     ) {
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 Message = "Skipped $($actionMessage). Reason: Mailbox no longer exists."
+                                IsError = $false
+                            })
+                    }
+                    elseif (Test-ExchangePermissionAlreadyRemoved -ErrorObject $ex) {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Message = "Skipped $($actionMessage). Reason: Account no longer has the permission."
                                 IsError = $false
                             })
                     }

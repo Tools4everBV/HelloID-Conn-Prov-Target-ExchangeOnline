@@ -84,7 +84,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -101,7 +101,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -238,9 +238,34 @@ try {
                     ErrorAction        = "Stop"
                 }
 
+                # Recover a half-created shared mailbox: a previous run may have created it without setting the attributes
+                # ($correlationField is empty then). Find it on the e-mail address, so it is not created again.
+                $createSharedMailboxResponseExisting = $null
+                try {
+                    $existingObject = Get-EXORecipient -Identity $createSharedMailboxSplatParams.PrimarySmtpAddress -Properties $correlationField -ErrorAction Stop
+                    if ([string]::IsNullOrEmpty($existingObject.$correlationField)) {
+                        $createSharedMailboxResponseExisting = $existingObject
+                    }
+                    else {
+                        throw "A shared mailbox with PrimarySmtpAddress [$($createSharedMailboxSplatParams.PrimarySmtpAddress)] already exists, but belongs to another resource ([$correlationField] = [$($existingObject.$correlationField)])"
+                    }
+                }
+                catch {
+                    if ($_.Exception.Message -like "*couldn't be found*" -or $_.Exception.Message -like "*wasn't found*" -or $_.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') {
+                        $createSharedMailboxResponseExisting = $null
+                    }
+                    else {
+                        throw
+                    }
+                }
+
                 Write-Information "SplatParams: $($createSharedMailboxSplatParams | ConvertTo-Json)"
 
-                if (-Not($actionContext.DryRun -eq $true)) {     
+                if ($createSharedMailboxResponseExisting) {
+                    $createSharedMailboxResponse = $createSharedMailboxResponseExisting
+                    Write-Information "Found existing shared mailbox with id [$($createSharedMailboxResponse.Guid)] on PrimarySmtpAddress [$($createSharedMailboxSplatParams.PrimarySmtpAddress)]: attributes are set now."
+                }
+                elseif (-Not($actionContext.DryRun -eq $true)) {     
                     $createSharedMailboxResponse = New-Mailbox @createSharedMailboxSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{

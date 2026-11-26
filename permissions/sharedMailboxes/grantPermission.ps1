@@ -18,6 +18,30 @@ $commands = @(
 )
 
 #region functions
+function Test-ExchangePermissionAlreadyGiven {
+    # True when Exchange Online reports that the user already has the permission (grant = success, nothing to do)
+    param(
+        [Parameter(Mandatory)]
+        [object]
+        $ErrorObject
+    )
+    $reason = "$($ErrorObject.CategoryInfo.Reason)"
+    $message = "$($ErrorObject.Exception.Message)"
+    return ($reason -like '*AlreadyExists*' -or $message -like '*already has*' -or $message -like '*already exists*' -or $message -like '*already a member*')
+}
+
+function Test-ExchangePermissionAlreadyRemoved {
+    # True when Exchange Online reports that the user no longer has the permission (revoke = skipped, nothing to do)
+    param(
+        [Parameter(Mandatory)]
+        [object]
+        $ErrorObject
+    )
+    $reason = "$($ErrorObject.CategoryInfo.Reason)"
+    $message = "$($ErrorObject.Exception.Message)"
+    return ($reason -like '*NotFound*' -or $message -like "*doesn't have*" -or $message -like '*does not have*' -or $message -like '*no longer has*' -or $message -like "*isn't a member*")
+}
+
 function Resolve-ExchangeOnlineError {
     [CmdletBinding()]
     param (
@@ -44,7 +68,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -61,7 +85,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -158,13 +182,27 @@ try {
                 if (-Not($actionContext.DryRun -eq $true)) {
                     Write-Information "SplatParams: $($grantFullAccessPermissionSplatParams | ConvertTo-Json)"
 
-                    $null = Add-MailboxPermission @grantFullAccessPermissionSplatParams
+                    $alreadyGiven = $false
+                    try {
+                        $null = Add-MailboxPermission @grantFullAccessPermissionSplatParams
+                    }
+                    catch {
+                        if (Test-ExchangePermissionAlreadyGiven -ErrorObject $PSItem) { $alreadyGiven = $true } else { throw }
+                    }
 
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
-                            Message = "Granted [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                            IsError = $false
-                        })
+                    if ($alreadyGiven) {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Message = "Skipped $($actionMessage). Reason: Account already has the permission."
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Granted [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                IsError = $false
+                            })
+                    }
                 }
                 else {
                     Write-Warning "DryRun: Would grant [FullAccess] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
@@ -188,13 +226,27 @@ try {
                 if (-Not($actionContext.DryRun -eq $true)) {
                     Write-Information "SplatParams: $($grantSendAsPermissionSplatParams | ConvertTo-Json)"
 
-                    $null = Add-RecipientPermission @grantSendAsPermissionSplatParams
+                    $alreadyGiven = $false
+                    try {
+                        $null = Add-RecipientPermission @grantSendAsPermissionSplatParams
+                    }
+                    catch {
+                        if (Test-ExchangePermissionAlreadyGiven -ErrorObject $PSItem) { $alreadyGiven = $true } else { throw }
+                    }
 
-                    $outputContext.AuditLogs.Add([PSCustomObject]@{
-                            # Action  = "" # Optional
-                            Message = "Granted [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
-                            IsError = $false
-                        })
+                    if ($alreadyGiven) {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                Message = "Skipped $($actionMessage). Reason: Account already has the permission."
+                                IsError = $false
+                            })
+                    }
+                    else {
+                        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                                # Action  = "" # Optional
+                                Message = "Granted [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                                IsError = $false
+                            })
+                    }
                 }
                 else {
                     Write-Warning "DryRun: Would grant [SendAs] to mailbox [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."

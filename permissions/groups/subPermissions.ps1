@@ -78,7 +78,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -95,7 +95,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -182,7 +182,7 @@ try {
             if ($contract.Context.InConditions -OR ($actionContext.DryRun -eq $true)) {
                 $actionMessage = "querying Exchange Online Group for department: $($contract.Department | ConvertTo-Json)"
 
-                # Get group to use objectGuid to avoid name change issues
+                # Get group to use its ExchangeObjectId to avoid name change issues
                 # Avaliable properties: https://learn.microsoft.com/en-us/powershell/exchange/filter-properties?view=exchange-ps
                 $correlationField = "CustomAttribute1"
                 $correlationValue = $contract.Department.ExternalId
@@ -197,16 +197,16 @@ try {
 
                 $getMicrosoftExchangeOnlineGroupsResponse = $null
                 $getMicrosoftExchangeOnlineGroupsResponse = Get-DistributionGroup @getMicrosoftExchangeOnlineGroupsSplatParams
-                $microsoftExchangeOnlineGroups = $getMicrosoftExchangeOnlineGroupsResponse | Select-Object -Property (@("Guid", "DisplayName", $correlationField) | Select-Object -Unique)
+                $microsoftExchangeOnlineGroups = $getMicrosoftExchangeOnlineGroupsResponse | Select-Object -Property (@("ExchangeObjectId", "DisplayName", $correlationField) | Select-Object -Unique)
 
-                if ($microsoftExchangeOnlineGroups.Guid.count -eq 0) {
+                if ($microsoftExchangeOnlineGroups.ExchangeObjectId.count -eq 0) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
                             Message = "No Group found where [$($correlationField)] = [$($correlationValue)]"
                             IsError = $true
                         })
                 }
-                elseif ($microsoftExchangeOnlineGroups.Guid.count -gt 1) {
+                elseif ($microsoftExchangeOnlineGroups.ExchangeObjectId.count -gt 1) {
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "GrantPermission"
                             Message = "Multiple Groups found where [$($correlationField)] = [$($correlationValue)]. Please correct this so the Groups are unique."
@@ -215,7 +215,7 @@ try {
                 }
                 else {
                     # Add group to desired permissions with the guid as key and the displayname as value (use id to avoid issues with name changes and for uniqueness)
-                    $desiredPermissions["$($microsoftExchangeOnlineGroups.Guid)"] = "$($microsoftExchangeOnlineGroups.DisplayName)"
+                    $desiredPermissions["$($microsoftExchangeOnlineGroups.ExchangeObjectId)"] = "$($microsoftExchangeOnlineGroups.DisplayName)"
                 }
             }
         }

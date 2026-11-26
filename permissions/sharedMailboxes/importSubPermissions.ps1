@@ -55,7 +55,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -72,7 +72,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -149,7 +149,7 @@ try {
     $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
     $userMailboxesGuidGrouped = $userMailboxes | Group-Object -Property 'Guid' -AsHashTable -AsString
     $userMailboxesNameGrouped = $userMailboxes | Group-Object -Property 'Name' -AsHashTable -AsString
-    Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
+    Write-Information "Successfully queried [$(@($userMailboxes | Where-Object { $null -ne $_ }).Count)] user mailboxes"
 
     # Cleanup for memory
     $userMailboxes = $null
@@ -159,13 +159,14 @@ try {
     $getSharedMailboxesParams = @{
         RecipientTypeDetails = 'SharedMailbox'
         ResultSize           = 'Unlimited'
-        Properties           = 'GrantSendOnBehalfTo'
+        # The filter field must be requested (and selected below), otherwise the filter never matches
+        Properties           = (@('GrantSendOnBehalfTo', $filterField) | Select-Object -Unique)
         ErrorAction          = 'Stop'
     }
 
-    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
+    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object -Property (@('DisplayName', 'Name', 'Guid', 'UserPrincipalName', 'GrantSendOnBehalfTo', $filterField) | Select-Object -Unique)
 
-    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
+    Write-Information "Successfully queried [$(@($sharedMailboxes | Where-Object { $null -ne $_ }).Count)] shared mailboxes"
     
     # Filter shared mailboxes with the matching filter criteria
     if ($filterField -eq 'DisplayName') {
@@ -175,18 +176,9 @@ try {
         $sharedMailboxes = $sharedMailboxes | Where-Object { $_.$filterField -eq $filterValue }
     }
     
-    Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes matching filter [$filterField = $filterValue]"
+    Write-Information "Successfully queried [$(@($sharedMailboxes | Where-Object { $null -ne $_ }).Count)] shared mailboxes matching filter [$filterField = $filterValue]"
 
-    $actionMessage = "getting all recipient permissions from Microsoft Exchange Online"
-    $getAllRecipientPermissionsParams = @{
-        ResultSize   = 'Unlimited'
-        AccessRights = 'SendAs'
-        ErrorAction  = 'Stop'
-    }
-    $allSendAsPermissions = Get-EXORecipientPermission @getAllRecipientPermissionsParams | Where-Object { $_.AccessControlType -eq 'Allow' } | Select-Object Identity, Trustee
-    $allSendAsPermissionsGrouped = $allSendAsPermissions | Group-Object -Property 'Identity' -AsHashTable -AsString
-    Write-Information "Successfully queried [$($allSendAsPermissions.count)] recipient permissions (SendAs)"
-    $allSendAsPermissions = $null
+
 
     $actionMessage = 'querying mailbox permissions'
     
@@ -228,15 +220,24 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
+                Write-Output $chunk
             }
         }
 
         # Get SendAs permissions for this shared mailbox
         $sendAsUsers = @()
-        $sendAsPermissions = $allSendAsPermissionsGrouped[$sharedMailbox.Name]
-        if ($null -ne $sendAsPermissions) {
+        # Query per shared mailbox on the Guid (not on the name): shared mailboxes with the same name must not get each other's permissions
+        $actionMessage = "getting SendAs permissions for shared mailbox with id [$($sharedMailbox.Guid)] from Microsoft Exchange Online"
+        $getSendAsPermissionsParams = @{
+            Identity    = $sharedMailbox.Guid
+            ResultSize  = 'Unlimited'
+            ErrorAction = 'Stop'
+        }
+        $sendAsPermissions = @(Get-EXORecipientPermission @getSendAsPermissionsParams | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.AccessRights -contains 'SendAs' } | Select-Object Trustee)
+        if ($sendAsPermissions.Count -gt 0) {
             foreach ($record in $sendAsPermissions) {
                 $sendAsUser = $userMailboxesUpnGrouped[$record.Trustee].Guid
                 if ($sendAsUser) { $sendAsUsers += $sendAsUser }
@@ -260,8 +261,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
+                Write-Output $chunk
             }
         }
 
@@ -285,9 +288,20 @@ try {
                 }
 
                 if (-not $sendOnBehalfUser) {
-                    $resolvedTrustee = Get-Mailbox -Identity $trusteeValue -ErrorAction SilentlyContinue | Select-Object -First 1 -Property Guid
-                    if ($resolvedTrustee.Guid) {
-                        $sendOnBehalfUser = $resolvedTrustee.Guid
+                    # Not silent: a trustee that cannot be resolved is logged, other errors stop the import (no incomplete list)
+                    try {
+                        $resolvedTrustee = Get-EXOMailbox -Identity $trusteeValue -RecipientTypeDetails UserMailbox -ErrorAction Stop | Select-Object -First 1 -Property Guid
+                        if ($resolvedTrustee.Guid) {
+                            $sendOnBehalfUser = $resolvedTrustee.Guid
+                        }
+                    }
+                    catch {
+                        if ($_.Exception.Message -like "*couldn't be found*" -or $_.Exception.Message -like "*wasn't found*" -or $_.CategoryInfo.Reason -eq 'ManagementObjectNotFoundException') {
+                            Write-Warning "SendOnBehalf trustee [$trusteeValue] of shared mailbox [$($sharedMailbox.Guid)] could not be resolved to a user mailbox and is skipped."
+                        }
+                        else {
+                            throw
+                        }
                     }
                 }
 
@@ -312,8 +326,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })
+                Write-Output $chunk
             }
         }
     }

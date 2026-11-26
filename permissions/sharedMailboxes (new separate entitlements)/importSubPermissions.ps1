@@ -58,7 +58,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -75,7 +75,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -162,11 +162,12 @@ try {
     $getSharedMailboxesParams = @{
         RecipientTypeDetails = 'SharedMailbox'
         ResultSize           = 'Unlimited'
-        Properties           = 'GrantSendOnBehalfTo'
+        # The filter field must be requested (and selected below), otherwise the filter never matches
+        Properties           = (@('GrantSendOnBehalfTo', $filterField) | Select-Object -Unique)
         ErrorAction          = 'Stop'
     }
 
-    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object DisplayName, Name, Guid, UserPrincipalName, GrantSendOnBehalfTo
+    $sharedMailboxes = Get-EXOMailbox @getSharedMailboxesParams | Select-Object -Property (@('DisplayName', 'Name', 'Guid', 'UserPrincipalName', 'GrantSendOnBehalfTo', $filterField) | Select-Object -Unique)
 
     Write-Information "Successfully queried [$($sharedMailboxes.count)] shared mailboxes"
     
@@ -242,8 +243,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
+                Write-Output $chunk
             }
         }
         #endregion Full Access Permission
@@ -279,8 +282,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
+                Write-Output $chunk
             }
         }
         #endregion Send As Permission
@@ -337,8 +342,10 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })
+                Write-Output $chunk
             }
         }
         #endregion Send On Behalf Permission

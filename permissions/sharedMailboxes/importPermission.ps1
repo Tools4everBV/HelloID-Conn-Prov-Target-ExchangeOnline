@@ -42,7 +42,7 @@ function Resolve-ExchangeOnlineError {
             }
         }
         try {
-            $errorObjectConverted = $ErrorObject | ConvertFrom-Json -ErrorAction Stop
+            $errorObjectConverted = $httpErrorObj.ErrorDetails | ConvertFrom-Json -ErrorAction Stop
 
             if ($null -ne $errorObjectConverted.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorObjectConverted.error_description
@@ -59,7 +59,7 @@ function Resolve-ExchangeOnlineError {
                 }
             }
             else {
-                $httpErrorObj.FriendlyMessage = $ErrorObject
+                $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
         }
         catch {
@@ -132,7 +132,7 @@ try {
 
     $userMailboxesUpnGrouped = $userMailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
 
-    Write-Information "Successfully queried [$($userMailboxes.count)] user mailboxes"
+    Write-Information "Successfully queried [$(@($userMailboxes | Where-Object { $null -ne $_ }).Count)] user mailboxes"
 
     # Cleanup for memory
     $userMailboxes = $null
@@ -177,12 +177,14 @@ try {
         if ($numberOfAccounts -gt 0) {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
-                Write-Output $permission
+                # Every chunk is its own object: the same object is not reused for the next chunk
+                $chunk = $permission.Clone()
+                $chunk.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
+                Write-Output $chunk
             }
         }
     }
-    Write-Information "Target permission import for shared mailboxes completed. Full Access: [$numberOfFullAccess] accounts. Total shared mailboxes: [$($sharedMailboxes.count)]"
+    Write-Information "Target permission import for shared mailboxes completed. Full Access: [$numberOfFullAccess] accounts. Total shared mailboxes: [$(@($sharedMailboxes | Where-Object { $null -ne $_ }).Count)]"
 }
 catch {
     $ex = $PSItem
